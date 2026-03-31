@@ -22,6 +22,13 @@ def _format_average(total_cycles: int, samples: int) -> str:
     return f"{total_cycles / samples:.2f}"
 
 
+def _format_percentage(numerator: int, denominator: int) -> str:
+    """Format one percentage for human-readable reports."""
+    if denominator <= 0:
+        return "0.00"
+    return f"{(numerator * 100) / denominator:.2f}"
+
+
 def emit_report(report_name: str, stats: dict[str, int]) -> None:
     """Print one curated report from the flattened stats snapshot."""
     if report_name == "latency":
@@ -81,6 +88,7 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
             print(f"report stalls key={key} value={stats[key]}")
         return
     if report_name == "units":
+        total_cycles = stats.get("cycles", 0)
         unit_names = sorted(
             {
                 key.removesuffix(".issued_ops")
@@ -94,8 +102,9 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
             }
         )
         for unit_name in unit_names:
+            busy_cycles = stats.get(f"{unit_name}.busy_cycles", 0)
             print(
-                f"report units unit={unit_name} issued_ops={stats.get(f'{unit_name}.issued_ops', 0)} busy_cycles={stats.get(f'{unit_name}.busy_cycles', 0)} max_queue_occupancy={stats.get(f'{unit_name}.max_queue_occupancy', 0)}"
+                f"report units unit={unit_name} issued_ops={stats.get(f'{unit_name}.issued_ops', 0)} busy_cycles={busy_cycles} busy_pct={_format_percentage(busy_cycles, total_cycles)} max_queue_occupancy={stats.get(f'{unit_name}.max_queue_occupancy', 0)}"
             )
         return
     if report_name == "isa":

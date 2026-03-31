@@ -100,12 +100,13 @@ class TestRunSimCLI:
         assert "report occupancy_summary unit=scalar samples=3 avg_depth=0.67 max_depth=1" in result.stdout
         assert "report stalls_summary total=0 categories=0" in result.stdout
         assert "report occupancy unit=scalar depth=1" in result.stdout
-        assert "report units unit=scalar issued_ops=2 busy_cycles=2 max_queue_occupancy=1" in result.stdout
+        assert "report units unit=scalar issued_ops=2 busy_cycles=2 busy_pct=66.67 max_queue_occupancy=1" in result.stdout
         assert "report isa opcode=addi issued=1 total_cycles=1" in result.stdout
 
     def test_emit_report_prints_memory_and_contention_views(self, capsys: object) -> None:
         """The report helper should print curated memory, contention, unit, and ISA views from flat stats."""
         stats = {
+            "cycles": 5,
             "dram.bytes_read": 32,
             "scratchpad.bytes_written": 16,
             "dram.contention_stalls": 2,
@@ -129,7 +130,7 @@ class TestRunSimCLI:
         assert "report memory key=scratchpad.bytes_written value=16" in captured.out
         assert "report contention key=dram.contention_stalls value=2" in captured.out
         assert "report contention key=scratchpad.bank_conflict.sp_bank_0 value=1" in captured.out
-        assert "report units unit=scalar issued_ops=4 busy_cycles=4 max_queue_occupancy=2" in captured.out
+        assert "report units unit=scalar issued_ops=4 busy_cycles=4 busy_pct=80.00 max_queue_occupancy=2" in captured.out
         assert "report isa opcode=addi issued=4 total_cycles=4" in captured.out
 
     def test_emit_report_prints_occupancy_summary_from_histogram(self, capsys: object) -> None:
