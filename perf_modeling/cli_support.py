@@ -47,6 +47,8 @@ class ExperimentManifest:
     """Optional single-run stats JSON output."""
     trace_json: str | None
     """Optional single-run trace JSON output."""
+    perfetto_trace: str | None
+    """Optional single-run Perfetto trace JSON output."""
     manifest_json: str | None
     """Optional single-run manifest JSON output."""
     sweep_json: str | None
@@ -174,6 +176,7 @@ def load_experiment_manifest(manifest_path: Path) -> ExperimentManifest:
         output_dir=output_dir,
         stats_json=None if "stats_json" not in artifacts else str(artifacts["stats_json"]),
         trace_json=None if "trace_json" not in artifacts else str(artifacts["trace_json"]),
+        perfetto_trace=None if "perfetto_trace" not in artifacts else str(artifacts["perfetto_trace"]),
         manifest_json=None if "manifest_json" not in artifacts else str(artifacts["manifest_json"]),
         sweep_json=None if "sweep_json" not in artifacts else str(artifacts["sweep_json"]),
         sweep_csv=None if "sweep_csv" not in artifacts else str(artifacts["sweep_csv"]),

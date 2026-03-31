@@ -367,6 +367,8 @@ def main() -> None:
     if effective_trace_json is None and experiment_manifest is not None:
         effective_trace_json = experiment_manifest.trace_json
     effective_perfetto_trace = args.perfetto_trace
+    if effective_perfetto_trace is None and experiment_manifest is not None:
+        effective_perfetto_trace = experiment_manifest.perfetto_trace
     effective_manifest_json = args.manifest_json
     if effective_manifest_json is None and experiment_manifest is not None:
         effective_manifest_json = experiment_manifest.manifest_json

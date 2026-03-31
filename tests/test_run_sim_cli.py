@@ -933,6 +933,58 @@ class TestRunSimCLI:
         assert stats_payload["config"] == "tiny_debug"
         assert stats_payload["stats"]["cycles"] > 3
 
+    def test_run_sim_loads_perfetto_trace_path_from_experiment_manifest(self) -> None:
+        """A grouped single-run manifest should be able to own the Perfetto artifact path."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "manifest_perfetto.S"
+            manifest_path = temp_path / "experiment.json"
+            perfetto_path = temp_path / "artifacts" / "trace.perfetto.json"
+            source.write_text(
+                "\n".join(
+                    [
+                        ".section .text",
+                        ".globl _start",
+                        "_start:",
+                        "  addi a0, x0, 5",
+                        "  ebreak",
+                        "",
+                    ]
+                )
+            )
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "program": source.name,
+                        "artifacts": {
+                            "output_dir": "artifacts",
+                            "perfetto_trace": "trace.perfetto.json",
+                        },
+                    }
+                )
+            )
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    "--experiment-json",
+                    str(manifest_path),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            payload = json.loads(perfetto_path.read_text())
+
+        assert "program=manifest_perfetto.S" in result.stdout
+        assert payload["displayTimeUnit"] == "ns"
+        assert any(event["ph"] == "X" for event in payload["traceEvents"])
+
     def test_run_sim_uses_manifest_config_name_in_config_report(self) -> None:
         """The config report should use the resolved manifest-selected config name."""
         repo_root = Path(__file__).resolve().parent.parent

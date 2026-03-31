@@ -155,6 +155,7 @@ The same grouped manifest style can drive a single run too:
     "output_dir": "artifacts",
     "stats_json": "stats.json",
     "trace_json": "trace.json",
+    "perfetto_trace": "trace.perfetto.json",
     "manifest_json": "run-manifest.json"
   }
 }
