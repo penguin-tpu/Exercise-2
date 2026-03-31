@@ -77,5 +77,6 @@ class TestDMASlice:
         assert stats["dma.issued_ops"] == 2
         assert stats["dram.bytes_read"] == 32
         assert stats["scratchpad.bytes_written"] == 32
+        assert stats["dma.max_queue_occupancy"] == 2
         assert stats["dma.queue_occupancy.1"] >= 1
         assert stats["dma.queue_occupancy.2"] >= 1

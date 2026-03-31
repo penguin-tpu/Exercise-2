@@ -74,7 +74,7 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
         )
         for unit_name in unit_names:
             print(
-                f"report units unit={unit_name} issued_ops={stats.get(f'{unit_name}.issued_ops', 0)} busy_cycles={stats.get(f'{unit_name}.busy_cycles', 0)}"
+                f"report units unit={unit_name} issued_ops={stats.get(f'{unit_name}.issued_ops', 0)} busy_cycles={stats.get(f'{unit_name}.busy_cycles', 0)} max_queue_occupancy={stats.get(f'{unit_name}.max_queue_occupancy', 0)}"
             )
         return
     if report_name == "isa":

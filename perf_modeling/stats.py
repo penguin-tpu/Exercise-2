@@ -29,6 +29,8 @@ class SimulationStats:
     def record_queue_occupancy(self, unit_name: str, depth: int) -> None:
         """Record one sampled queue-occupancy bucket for a unit."""
         self.counters[f"{unit_name}.queue_occupancy.{depth}"] += 1
+        max_key = f"{unit_name}.max_queue_occupancy"
+        self.counters[max_key] = max(self.counters.get(max_key, 0), depth)
 
     def record_instruction_latency(self, opcode: str, latency_cycles: int) -> None:
         """Record one planned instruction-latency sample."""

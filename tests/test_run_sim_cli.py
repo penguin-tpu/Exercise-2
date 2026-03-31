@@ -96,7 +96,7 @@ class TestRunSimCLI:
         assert "report latency opcode=addi" in result.stdout
         assert "avg_cycles=1.00" in result.stdout
         assert "report occupancy unit=scalar depth=1" in result.stdout
-        assert "report units unit=scalar" in result.stdout
+        assert "report units unit=scalar issued_ops=2 busy_cycles=2 max_queue_occupancy=1" in result.stdout
         assert "report isa opcode=addi issued=1 total_cycles=1" in result.stdout
 
     def test_emit_report_prints_memory_and_contention_views(self, capsys: object) -> None:
@@ -110,6 +110,7 @@ class TestRunSimCLI:
             "scratchpad.port_conflict.sp_read_port_0": 3,
             "scalar.issued_ops": 4,
             "scalar.busy_cycles": 4,
+            "scalar.max_queue_occupancy": 2,
             "latency.addi.samples": 4,
             "latency.addi.total_cycles": 4,
         }
@@ -124,5 +125,5 @@ class TestRunSimCLI:
         assert "report memory key=scratchpad.bytes_written value=16" in captured.out
         assert "report contention key=dram.contention_stalls value=2" in captured.out
         assert "report contention key=scratchpad.bank_conflict.sp_bank_0 value=1" in captured.out
-        assert "report units unit=scalar issued_ops=4 busy_cycles=4" in captured.out
+        assert "report units unit=scalar issued_ops=4 busy_cycles=4 max_queue_occupancy=2" in captured.out
         assert "report isa opcode=addi issued=4 total_cycles=4" in captured.out
