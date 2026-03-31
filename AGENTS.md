@@ -40,7 +40,9 @@ Functional semantics define what happens. Timing and resource logic define when 
   - next-step plan
 - Use timestamped log filenames so progress is easy to follow chronologically.
 - Make a git commit at least every 2 hours while working, or sooner when reaching a clear milestone.
+- Push to remote everytime you make commit.
 - Milestone commits should summarize the functional change, not just “progress” or “WIP”.
+- User instructions are in INSTRUCTIONS.md. It is formatted as a Markdown checklist. Check this file from time to time, and mark (`-[x]`) the entries that you have read and started working on.
 
 ## Dev Environment Tips
 
