@@ -44,3 +44,26 @@ class TestRunSimCLI:
         assert isinstance(trace_payload, list)
         assert trace_payload
         assert any(record["kind"] == "issue" for record in trace_payload)
+
+    def test_run_sim_prints_filtered_stats_and_trace_tail(self) -> None:
+        """The CLI should print filtered stat families and a bounded trace tail on request."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        result = subprocess.run(
+            [
+                "python3",
+                str(script),
+                "--print-stats-prefix",
+                "latency.",
+                "--print-trace-limit",
+                "2",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+            cwd=repo_root,
+        )
+
+        assert "stat[latency.addi.samples]=1" in result.stdout
+        assert "stat[latency.addi.total_cycles]=1" in result.stdout
+        assert "trace cycle=" in result.stdout

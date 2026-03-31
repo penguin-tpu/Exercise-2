@@ -43,6 +43,18 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional path for a JSON trace export, or '-' to write JSON to stdout.",
     )
+    parser.add_argument(
+        "--print-stats-prefix",
+        action="append",
+        default=[],
+        help="Print sorted stats whose keys start with the provided prefix. May be repeated.",
+    )
+    parser.add_argument(
+        "--print-trace-limit",
+        type=int,
+        default=0,
+        help="Print the last N retained trace records after the summary.",
+    )
     return parser.parse_args()
 
 
@@ -72,6 +84,13 @@ def main() -> None:
     print(
         f"cycles={stats.get('cycles', 0)} issued={stats.get('instructions_issued', 0)} retired={stats.get('instructions_retired', 0)}"
     )
+    if args.print_stats_prefix:
+        for key in sorted(stats):
+            if any(key.startswith(prefix) for prefix in args.print_stats_prefix):
+                print(f"stat[{key}]={stats[key]}")
+    if args.print_trace_limit > 0:
+        for record in engine.trace.records[-args.print_trace_limit :]:
+            print(f"trace cycle={record.cycle} kind={record.kind} message={record.message}")
     if args.stats_json is not None:
         stats_payload = {
             "program": program.name,
