@@ -33,6 +33,20 @@ class Instruction:
     operands: tuple[object, ...] = ()
     metadata: dict[str, object] = field(default_factory=dict)
 
+    def source_regs(self) -> tuple[int, ...]:
+        """Return the scalar source register indexes used by this instruction."""
+        return tuple(int(index) for index in self.metadata.get("source_regs", ()))
+
+    def dest_regs(self) -> tuple[int, ...]:
+        """Return the scalar destination register indexes written by this instruction."""
+        return tuple(int(index) for index in self.metadata.get("dest_regs", ()))
+
+    def unit_name(self) -> str:
+        """Return the execution unit expected to service this instruction."""
+        if self.opcode in {"lb", "lh", "lw", "lbu", "lhu", "sb", "sh", "sw"}:
+            return "load_store"
+        return "scalar"
+
     def validate(self, state: "ArchState", config: "AcceleratorConfig") -> None:
         """Validate architectural legality before issue."""
         _ = state
@@ -47,9 +61,6 @@ class Instruction:
         backend: "TensorBackend | None" = None,
     ) -> ExecutionPlan:
         """Create a timing and completion plan for this instruction."""
-        _ = cycle
-        _ = state
-        _ = config
-        _ = scoreboard
-        _ = backend
-        raise NotImplementedError(f"No planner has been registered for opcode {self.opcode!r}.")
+        from perf_modeling.isa.semantics import DEFAULT_SEMANTICS
+
+        return DEFAULT_SEMANTICS.plan(self, cycle, state, config, scoreboard, backend)

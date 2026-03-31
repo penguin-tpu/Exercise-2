@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from perf_modeling.config import AcceleratorConfig
 from perf_modeling.state.memory import ByteAddressableMemory
 from perf_modeling.state.register_file import ScalarRegisterFile
 from perf_modeling.state.scratchpad import ScratchpadMemory
 from perf_modeling.types import OpId, TensorDescriptor
+
+if TYPE_CHECKING:
+    from perf_modeling.program import Program
 
 
 @dataclass
@@ -27,8 +31,12 @@ class ArchState:
     tensor_regs: object
     scratchpad: ScratchpadMemory
     dram: ByteAddressableMemory
+    machine_config: object
     pc: int = 0
     halted: bool = False
+    fetch_stalled: bool = False
+    exit_code: int | None = None
+    trap_reason: str | None = None
     outstanding_ops: set[OpId] = field(default_factory=set)
 
     @classmethod
@@ -53,21 +61,83 @@ class ArchState:
             tensor_regs=tensor_regs,
             scratchpad=scratchpad,
             dram=dram,
+            machine_config=config.machine,
+            pc=config.machine.reset_pc,
         )
 
     def reset(self) -> None:
         """Reset all architected state to the initial machine state."""
-        self.pc = 0
+        self.pc = self.machine_config.reset_pc
         self.halted = False
+        self.fetch_stalled = False
+        self.exit_code = None
+        self.trap_reason = None
         self.outstanding_ops.clear()
         self.scalar_regs.reset()
+        self.scalar_regs.write(2, self.machine_config.initial_stack_pointer)
         self.tensor_regs.reset()
         self.scratchpad.reset()
         self.dram.reset()
 
-    def next_pc(self) -> None:
+    def initialize_pc(self, value: int) -> None:
+        """Initialize or update the current fetch PC."""
+        self.pc = value & 0xFFFF_FFFF
+
+    def next_pc(self, stride_bytes: int) -> None:
         """Advance the program counter to the next sequential instruction."""
-        self.pc += 1
+        self.pc = (self.pc + stride_bytes) & 0xFFFF_FFFF
+
+    def jump(self, target: int) -> None:
+        """Update the program counter to a specific control-flow target."""
+        self.pc = target & 0xFFFF_FFFF
+
+    def load_program(self, program: Program, config: AcceleratorConfig) -> None:
+        """Load a program image into architectural state and initialize machine registers."""
+        self.reset()
+        for segment in program.segments:
+            if segment.address < config.machine.scratchpad_base_address:
+                self.dram.load_image(segment.address, segment.data)
+                continue
+            scratchpad_address = segment.address - config.machine.scratchpad_base_address
+            self.scratchpad.load_image(scratchpad_address, segment.data)
+        self.initialize_pc(program.entry_point)
+        stack_pointer = program.initial_stack_pointer
+        if stack_pointer is None:
+            stack_pointer = min(
+                self.machine_config.initial_stack_pointer,
+                config.dram.capacity_bytes - 4,
+            )
+        self.scalar_regs.write(2, stack_pointer)
+
+    def halt(self, exit_code: int | None = None) -> None:
+        """Stop architectural execution with an optional exit code."""
+        self.halted = True
+        self.fetch_stalled = False
+        self.exit_code = exit_code
+
+    def trap(self, reason: str) -> None:
+        """Stop architectural execution because of a fatal machine trap."""
+        self.halted = True
+        self.fetch_stalled = False
+        self.trap_reason = reason
+
+    def resolve_memory(self, address: int, config: AcceleratorConfig) -> tuple[ByteAddressableMemory, int]:
+        """Return the addressed memory object plus its local byte address."""
+        if config.machine.scratchpad_base_address <= address < (
+            config.machine.scratchpad_base_address + config.scratchpad.capacity_bytes
+        ):
+            return self.scratchpad, address - config.machine.scratchpad_base_address
+        return self.dram, address
+
+    def read_memory(self, address: int, size: int, config: AcceleratorConfig) -> bytes:
+        """Read a byte range from the mapped memory hierarchy."""
+        memory, local_address = self.resolve_memory(address, config)
+        return memory.read(local_address, size)
+
+    def write_memory(self, address: int, data: bytes, config: AcceleratorConfig) -> None:
+        """Write a byte range into the mapped memory hierarchy."""
+        memory, local_address = self.resolve_memory(address, config)
+        memory.write(local_address, data)
 
     def mark_op_outstanding(self, op_id: OpId) -> None:
         """Track an in-flight operation until its completion event fires."""

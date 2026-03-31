@@ -13,6 +13,7 @@ from perf_modeling.workloads.kernels import KernelProblem
 class ProgramBuilder:
     """Helper used to assemble synthetic programs for validation."""
 
+    base_address: int = 0
     instructions: list[Instruction] = field(default_factory=list)
     labels: dict[str, int] = field(default_factory=dict)
 
@@ -34,12 +35,21 @@ class ProgramBuilder:
 
     def label(self, name: str) -> "ProgramBuilder":
         """Bind the current program counter to a textual label."""
-        self.labels[name] = len(self.instructions)
+        self.labels[name] = self.base_address + len(self.instructions) * 4
         return self
 
     def build(self, name: str = "generated") -> Program:
         """Freeze the accumulated instructions into a program object."""
-        return Program(instructions=tuple(self.instructions), labels=dict(self.labels), name=name)
+        instruction_map = {
+            self.base_address + index * 4: instruction
+            for index, instruction in enumerate(self.instructions)
+        }
+        return Program(
+            instructions=instruction_map,
+            entry_point=self.base_address,
+            labels=dict(self.labels),
+            name=name,
+        )
 
     def build_dma_smoke_test(self, problem: KernelProblem) -> Program:
         """Construct a placeholder DMA-oriented microbenchmark program."""

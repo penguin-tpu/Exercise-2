@@ -21,6 +21,8 @@ class Scoreboard:
 
     def mark_scalar_busy(self, index: int) -> None:
         """Mark a scalar destination register as busy."""
+        if index == 0:
+            return
         self.busy_scalars.add(index)
 
     def mark_tensor_busy(self, index: int) -> None:
@@ -30,6 +32,10 @@ class Scoreboard:
     def release_scalar(self, index: int) -> None:
         """Release a scalar register once its producer completes."""
         self.busy_scalars.discard(index)
+
+    def scalar_ready(self, index: int) -> bool:
+        """Return whether the scalar register may be consumed this cycle."""
+        return index == 0 or index not in self.busy_scalars
 
     def release_tensor(self, index: int) -> None:
         """Release a tensor register once its producer completes."""

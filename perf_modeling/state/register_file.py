@@ -17,6 +17,11 @@ class ScalarRegisterFile:
         """Allocate storage for all architectural scalar registers."""
         self.values = [0 for _ in range(self.num_registers)]
 
+    @property
+    def value_mask(self) -> int:
+        """Return the architectural write mask for one register."""
+        return (1 << self.register_width_bits) - 1
+
     def reset(self) -> None:
         """Reset all scalar registers to zero."""
         for index in range(self.num_registers):
@@ -24,8 +29,12 @@ class ScalarRegisterFile:
 
     def read(self, index: int) -> int:
         """Read a scalar register value."""
+        if index == 0:
+            return 0
         return self.values[index]
 
     def write(self, index: int, value: int) -> None:
         """Write a scalar register value after width truncation if needed."""
-        self.values[index] = value
+        if index == 0:
+            return
+        self.values[index] = value & self.value_mask

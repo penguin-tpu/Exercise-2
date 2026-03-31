@@ -120,6 +120,26 @@ class DRAMConfig:
 
 
 @dataclass(frozen=True)
+class MachineConfig:
+    """Configuration for the scalar machine model exposed by the simulator."""
+
+    reset_pc: int = 0x0000_1000
+    """Default reset vector used when a program image does not override entry."""
+    initial_stack_pointer: int = 0x000F_FFFC
+    """Initial stack pointer used for bare-metal RV32I execution."""
+    scratchpad_base_address: int = 0x2000_0000
+    """Base address of the memory-mapped scratchpad window."""
+    halt_on_ecall: bool = True
+    """Whether an ECALL instruction halts the simulator."""
+    halt_on_ebreak: bool = True
+    """Whether an EBREAK instruction halts the simulator."""
+    strict_alignment: bool = True
+    """Whether misaligned instruction and data accesses raise a trap."""
+    instruction_bytes: int = 4
+    """Number of bytes per fetched RV32I instruction."""
+
+
+@dataclass(frozen=True)
 class CoreConfig:
     """Top-level core configuration for execution resources."""
 
@@ -177,8 +197,9 @@ class AcceleratorConfig:
     """Configuration for on-chip SRAM storage."""
     dram: DRAMConfig = field(default_factory=DRAMConfig)
     """Configuration for the off-chip memory abstraction."""
+    machine: MachineConfig = field(default_factory=MachineConfig)
+    """Configuration for the scalar RV32I machine-level execution model."""
     timing: TimingConfig = field(default_factory=TimingConfig)
     """Configuration for simulator-wide timing and policy knobs."""
     trace: TraceConfig = field(default_factory=TraceConfig)
     """Configuration for trace capture and debugging output."""
-
