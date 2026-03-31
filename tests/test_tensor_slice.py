@@ -19,6 +19,16 @@ def unpack_int32(blob: bytes) -> tuple[int, ...]:
     return struct.unpack("<" + "i" * (len(blob) // 4), blob)
 
 
+def pack_float32(values: list[float]) -> bytes:
+    """Pack a list of float32 values into little-endian bytes."""
+    return struct.pack("<" + "f" * len(values), *values)
+
+
+def unpack_float32(blob: bytes) -> tuple[float, ...]:
+    """Unpack little-endian float32 values from bytes."""
+    return struct.unpack("<" + "f" * (len(blob) // 4), blob)
+
+
 class TestTensorSlice:
     """Exercise the first accelerator-side tensor vertical slice."""
 
@@ -67,3 +77,31 @@ class TestTensorSlice:
         assert stats["dram.bytes_read"] == 32
         assert stats["dram.bytes_written"] == 16
         assert stats["scratchpad.bytes_written"] == 16
+
+    def test_tensor_vertical_slice_executes_float32_load_compute_store(self) -> None:
+        """Tensor loads, vector add, matmul, and stores should also support float32 payloads."""
+        scratchpad_base = self.make_config().machine.scratchpad_base_address
+        program = (
+            ProgramBuilder(base_address=0x1000)
+            .emit_tensor_load(dest_tensor=0, address=0x200, shape=(2, 2), dtype="float32")
+            .emit_tensor_load(dest_tensor=1, address=0x240, shape=(2, 2), dtype="float32")
+            .emit_vector_add(dest_tensor=2, lhs_tensor=0, rhs_tensor=1, out_dtype="float32")
+            .emit_matmul(dest_tensor=3, lhs_tensor=0, rhs_tensor=1, acc_dtype="float32", out_dtype="float32")
+            .emit_tensor_store(source_tensor=2, address=0x280)
+            .emit_tensor_store(source_tensor=3, address=scratchpad_base)
+            .emit("ebreak")
+            .build(name="tensor-float32-vertical-slice")
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x200, pack_float32([0.5, 1.0, 1.5, 2.0]))
+        engine.state.dram.write(0x240, pack_float32([2.0, 0.5, 1.0, 1.5]))
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert tuple(engine.state.tensor_regs.read(2).payload.reshape(-1).tolist()) == (2.5, 1.5, 2.5, 3.5)
+        assert tuple(engine.state.tensor_regs.read(3).payload.reshape(-1).tolist()) == (2.0, 1.75, 5.0, 3.75)
+        assert unpack_float32(engine.state.dram.read(0x280, 16)) == (2.5, 1.5, 2.5, 3.5)
+        assert unpack_float32(engine.state.scratchpad.read(0, 16)) == (2.0, 1.75, 5.0, 3.75)
+        assert stats["vector.issued_ops"] == 1
+        assert stats["mxu.issued_ops"] == 1
