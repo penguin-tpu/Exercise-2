@@ -110,29 +110,29 @@ class SimulatorEngine:
             return
         instruction = self.program.instruction_at(self.state.pc)
         if any(not self.scoreboard.scalar_ready(index) for index in instruction.source_regs()):
-            self.stats.increment("stall_scalar_dependency", 1)
+            self._record_stall("stall_scalar_dependency", f"scalar dependency @ 0x{self.state.pc:08x}")
             return
         if any(not self.scoreboard.scalar_ready(index) for index in instruction.dest_regs()):
-            self.stats.increment("stall_scalar_waw", 1)
+            self._record_stall("stall_scalar_waw", f"scalar WAW @ 0x{self.state.pc:08x}")
             return
         if any(not self.scoreboard.tensor_ready(index) for index in instruction.source_tensors()):
-            self.stats.increment("stall_tensor_dependency", 1)
+            self._record_stall("stall_tensor_dependency", f"tensor dependency @ 0x{self.state.pc:08x}")
             return
         if any(not self.scoreboard.tensor_ready(index) for index in instruction.dest_tensors()):
-            self.stats.increment("stall_tensor_waw", 1)
+            self._record_stall("stall_tensor_waw", f"tensor WAW @ 0x{self.state.pc:08x}")
             return
         if any(not self.scoreboard.csr_ready(address) for address in instruction.source_csrs()):
-            self.stats.increment("stall_csr_dependency", 1)
+            self._record_stall("stall_csr_dependency", f"csr dependency @ 0x{self.state.pc:08x}")
             return
         if any(not self.scoreboard.csr_ready(address) for address in instruction.dest_csrs()):
-            self.stats.increment("stall_csr_waw", 1)
+            self._record_stall("stall_csr_waw", f"csr WAW @ 0x{self.state.pc:08x}")
             return
         if instruction.opcode == "fence" and self.state.outstanding_ops:
-            self.stats.increment("stall_fence", 1)
+            self._record_stall("stall_fence", f"fence wait @ 0x{self.state.pc:08x}")
             return
         unit = self._unit_for_instruction(instruction)
         if not unit.can_accept():
-            self.stats.increment(f"stall_{unit.name}_busy", 1)
+            self._record_stall(f"stall_{unit.name}_busy", f"{unit.name} busy @ 0x{self.state.pc:08x}")
             return
         try:
             plan = instruction.plan(
@@ -193,6 +193,11 @@ class SimulatorEngine:
         for unit in self.iter_units():
             if unit.is_busy():
                 self.stats.record_busy_cycle(unit.name)
+
+    def _record_stall(self, counter_name: str, message: str) -> None:
+        """Increment one stall counter and append a matching trace record."""
+        self.stats.increment(counter_name, 1)
+        self.trace.append(self.cycle, "stall", message)
 
     def iter_units(self) -> tuple[object, ...]:
         """Return all modeled units in a stable iteration order."""
