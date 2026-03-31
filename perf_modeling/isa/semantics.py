@@ -185,6 +185,23 @@ def _tensor_num_elements(shape: tuple[int, ...]) -> int:
     return elements
 
 
+def _write_tensor_register(
+    state: "ArchState",
+    dest_index: int,
+    shape: tuple[int, ...],
+    dtype: str,
+    payload: object,
+) -> None:
+    """Write a completed tensor result into one architectural tensor register."""
+    descriptor = TensorDescriptor(
+        shape=shape,
+        dtype=dtype,
+        location=StorageLocation.REGISTER,
+        name=f"t{dest_index}",
+    )
+    state.tensor_regs.write(dest_index, TensorValue(descriptor=descriptor, payload=payload))
+
+
 def _tensor_nbytes(shape: tuple[int, ...], dtype: str) -> int:
     """Return the logical storage size of one tensor payload."""
     if dtype not in DTYPE_BYTE_WIDTHS:
@@ -879,13 +896,7 @@ def _plan_vadd(
         if backend is None:
             raise ValueError("Tensor backend is required for vector instructions.")
         payload = backend.elementwise("add", (lhs.payload, rhs.payload), out_dtype)
-        descriptor = TensorDescriptor(
-            shape=lhs.descriptor.shape,
-            dtype=out_dtype,
-            location=StorageLocation.REGISTER,
-            name=f"t{dest_index}",
-        )
-        state.tensor_regs.write(dest_index, TensorValue(descriptor=descriptor, payload=payload))
+        _write_tensor_register(state, dest_index, lhs.descriptor.shape, out_dtype, payload)
 
     return ExecutionPlan(
         completion_cycle=completion_cycle,
@@ -898,6 +909,87 @@ def _plan_vadd(
         ],
         on_complete=on_complete,
         description=f"vadd @ 0x{pc:08x}",
+    )
+
+
+def _plan_vrelu(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    _scoreboard: "Scoreboard",
+    backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    pc = _load_field(instruction, "pc")
+    source_index = instruction.source_tensors()[0]
+    dest_index = instruction.dest_tensors()[0]
+    source = _require_tensor(state, source_index, pc, "Source")
+    out_dtype = _tensor_dtype(instruction, "out_dtype")
+    elements = _tensor_num_elements(source.descriptor.shape)
+    completion_cycle = cycle + vector_latency(config.core.vector, elements)
+
+    def on_complete() -> None:
+        if backend is None:
+            raise ValueError("Tensor backend is required for vector instructions.")
+        zero = backend.zeros(source.descriptor.shape, source.descriptor.dtype)
+        payload = backend.elementwise("max", (source.payload, zero), out_dtype)
+        _write_tensor_register(state, dest_index, source.descriptor.shape, out_dtype, payload)
+
+    return ExecutionPlan(
+        completion_cycle=completion_cycle,
+        resources=[
+            ResourceReservation(
+                resource_name="vector",
+                start_cycle=cycle,
+                end_cycle=completion_cycle,
+            )
+        ],
+        on_complete=on_complete,
+        description=f"vrelu @ 0x{pc:08x}",
+    )
+
+
+def _plan_vreduce_sum(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    _scoreboard: "Scoreboard",
+    backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    pc = _load_field(instruction, "pc")
+    source_index = instruction.source_tensors()[0]
+    dest_index = instruction.dest_tensors()[0]
+    source = _require_tensor(state, source_index, pc, "Source")
+    out_dtype = _tensor_dtype(instruction, "out_dtype")
+    output_shape = tuple(int(dimension) for dimension in instruction.metadata.get("output_shape", (1,)))
+    if _tensor_num_elements(output_shape) != 1:
+        raise MachineTrap(
+            cause=CAUSE_ILLEGAL_INSTRUCTION,
+            pc=pc,
+            tval=0,
+            reason=f"Vector reduce-sum expects a scalar output shape at 0x{pc:08x}, got {output_shape}.",
+        )
+    elements = _tensor_num_elements(source.descriptor.shape)
+    completion_cycle = cycle + vector_latency(config.core.vector, elements)
+
+    def on_complete() -> None:
+        if backend is None:
+            raise ValueError("Tensor backend is required for vector instructions.")
+        payload = backend.reduce("sum", source.payload, out_dtype).reshape(output_shape)
+        _write_tensor_register(state, dest_index, output_shape, out_dtype, payload)
+
+    return ExecutionPlan(
+        completion_cycle=completion_cycle,
+        resources=[
+            ResourceReservation(
+                resource_name="vector",
+                start_cycle=cycle,
+                end_cycle=completion_cycle,
+            )
+        ],
+        on_complete=on_complete,
+        description=f"vreduce_sum @ 0x{pc:08x}",
     )
 
 
@@ -940,13 +1032,7 @@ def _plan_matmul(
         if backend is None:
             raise ValueError("Tensor backend is required for MXU instructions.")
         payload = backend.matmul(lhs.payload, rhs.payload, acc_dtype, out_dtype)
-        descriptor = TensorDescriptor(
-            shape=(lhs_rows, rhs_cols),
-            dtype=out_dtype,
-            location=StorageLocation.REGISTER,
-            name=f"t{dest_index}",
-        )
-        state.tensor_regs.write(dest_index, TensorValue(descriptor=descriptor, payload=payload))
+        _write_tensor_register(state, dest_index, (lhs_rows, rhs_cols), out_dtype, payload)
 
     return ExecutionPlan(
         completion_cycle=completion_cycle,
@@ -1116,6 +1202,8 @@ def build_rv32i_semantics_registry() -> SemanticsRegistry:
     registry.register("tload", _plan_tload)
     registry.register("tstore", _plan_tstore)
     registry.register("vadd", _plan_vadd)
+    registry.register("vrelu", _plan_vrelu)
+    registry.register("vreduce_sum", _plan_vreduce_sum)
     registry.register("matmul", _plan_matmul)
     registry.register("fence", _plan_fence)
     for opcode in ("csrrw", "csrrs", "csrrc", "csrrwi", "csrrsi", "csrrci"):

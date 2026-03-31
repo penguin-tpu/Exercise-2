@@ -97,6 +97,52 @@ class TestWorkloadBuilders:
         assert stats["vector.issued_ops"] == 1
         assert stats["stall_fence"] >= 1
 
+    def test_vector_relu_smoke_builder_executes_end_to_end(self) -> None:
+        """The vector-ReLU builder should emit a runnable tensor microbenchmark."""
+        problem = KernelProblem(
+            name="vector-relu",
+            input_shapes=((4,),),
+            output_shape=(4,),
+        )
+        program = ProgramBuilder(base_address=0x1000).build_vector_relu_smoke_test(
+            problem=problem,
+            input_address=0x200,
+            output_address=0x240,
+            dtype="int32",
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x200, pack_int32([-3, 0, 5, -1]))
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert unpack_int32(engine.state.dram.read(0x240, 16)) == (0, 0, 5, 0)
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_vector_reduce_sum_smoke_builder_executes_end_to_end(self) -> None:
+        """The vector reduce-sum builder should emit a runnable tensor microbenchmark."""
+        problem = KernelProblem(
+            name="vector-reduce-sum",
+            input_shapes=((4,),),
+            output_shape=(1,),
+        )
+        program = ProgramBuilder(base_address=0x1000).build_vector_reduce_sum_smoke_test(
+            problem=problem,
+            input_address=0x200,
+            output_address=0x240,
+            dtype="int32",
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x200, pack_int32([2, 4, 6, 8]))
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert unpack_int32(engine.state.dram.read(0x240, 4)) == (20,)
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
     def test_matmul_smoke_builder_executes_end_to_end(self) -> None:
         """The matmul builder should emit a runnable tensor microbenchmark."""
         problem = KernelProblem(

@@ -112,6 +112,40 @@ class ProgramBuilder:
             },
         )
 
+    def emit_vector_relu(
+        self,
+        dest_tensor: int,
+        source_tensor: int,
+        out_dtype: str,
+    ) -> "ProgramBuilder":
+        """Append a vector ReLU over one tensor register."""
+        return self.emit(
+            "vrelu",
+            metadata={
+                "source_tensors": (source_tensor,),
+                "dest_tensors": (dest_tensor,),
+                "out_dtype": out_dtype,
+            },
+        )
+
+    def emit_vector_reduce_sum(
+        self,
+        dest_tensor: int,
+        source_tensor: int,
+        out_dtype: str,
+        output_shape: tuple[int, ...] = (1,),
+    ) -> "ProgramBuilder":
+        """Append a vector reduce-sum over one tensor register."""
+        return self.emit(
+            "vreduce_sum",
+            metadata={
+                "source_tensors": (source_tensor,),
+                "dest_tensors": (dest_tensor,),
+                "out_dtype": out_dtype,
+                "output_shape": output_shape,
+            },
+        )
+
     def emit_matmul(
         self,
         dest_tensor: int,
@@ -197,6 +231,50 @@ class ProgramBuilder:
             .emit("fence")
             .emit("ebreak")
             .build(name=f"{problem.name}-vector-add-smoke")
+        )
+
+    def build_vector_relu_smoke_test(
+        self,
+        problem: KernelProblem,
+        input_address: int,
+        output_address: int,
+        dtype: str,
+    ) -> Program:
+        """Construct a tensor-load, vector-ReLU, tensor-store microbenchmark program."""
+        if len(problem.input_shapes) != 1:
+            raise ValueError("Vector-ReLU smoke tests expect exactly one input tensor.")
+        if problem.output_shape != problem.input_shapes[0]:
+            raise ValueError("Vector-ReLU smoke-test output shape must match the input tensor.")
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_tensor_load(dest_tensor=0, address=input_address, shape=problem.input_shapes[0], dtype=dtype)
+            .emit_vector_relu(dest_tensor=1, source_tensor=0, out_dtype=dtype)
+            .emit_tensor_store(source_tensor=1, address=output_address)
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-vector-relu-smoke")
+        )
+
+    def build_vector_reduce_sum_smoke_test(
+        self,
+        problem: KernelProblem,
+        input_address: int,
+        output_address: int,
+        dtype: str,
+    ) -> Program:
+        """Construct a tensor-load, vector-reduce-sum, tensor-store microbenchmark program."""
+        if len(problem.input_shapes) != 1:
+            raise ValueError("Vector reduce-sum smoke tests expect exactly one input tensor.")
+        if problem.output_shape != (1,):
+            raise ValueError("Vector reduce-sum smoke-test output shape must be (1,).")
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_tensor_load(dest_tensor=0, address=input_address, shape=problem.input_shapes[0], dtype=dtype)
+            .emit_vector_reduce_sum(dest_tensor=1, source_tensor=0, out_dtype=dtype, output_shape=problem.output_shape)
+            .emit_tensor_store(source_tensor=1, address=output_address)
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-vector-reduce-sum-smoke")
         )
 
     def build_staged_vector_add_smoke_test(

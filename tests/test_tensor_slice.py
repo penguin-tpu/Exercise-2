@@ -105,3 +105,29 @@ class TestTensorSlice:
         assert unpack_float32(engine.state.scratchpad.read(0, 16)) == (2.0, 1.75, 5.0, 3.75)
         assert stats["vector.issued_ops"] == 1
         assert stats["mxu.issued_ops"] == 1
+
+    def test_tensor_vertical_slice_executes_vector_relu_and_reduce_sum(self) -> None:
+        """Tensor loads, vector ReLU, vector reduce-sum, and stores should execute through the engine."""
+        scratchpad_base = self.make_config().machine.scratchpad_base_address
+        program = (
+            ProgramBuilder(base_address=0x1000)
+            .emit_tensor_load(dest_tensor=0, address=0x200, shape=(4,), dtype="int32")
+            .emit_vector_relu(dest_tensor=1, source_tensor=0, out_dtype="int32")
+            .emit_vector_reduce_sum(dest_tensor=2, source_tensor=1, out_dtype="int32")
+            .emit_tensor_store(source_tensor=1, address=0x240)
+            .emit_tensor_store(source_tensor=2, address=scratchpad_base)
+            .emit("ebreak")
+            .build(name="tensor-relu-reduce-vertical-slice")
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x200, pack_int32([-3, 0, 5, -1]))
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert tuple(engine.state.tensor_regs.read(1).payload.reshape(-1).tolist()) == (0, 0, 5, 0)
+        assert tuple(engine.state.tensor_regs.read(2).payload.reshape(-1).tolist()) == (5,)
+        assert unpack_int32(engine.state.dram.read(0x240, 16)) == (0, 0, 5, 0)
+        assert unpack_int32(engine.state.scratchpad.read(0, 4)) == (5,)
+        assert stats["vector.issued_ops"] == 2
+        assert stats["load_store.issued_ops"] >= 3

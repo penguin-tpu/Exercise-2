@@ -24,6 +24,9 @@ class TensorBackend(Protocol):
     def elementwise(self, op_name: str, args: tuple[object, ...], out_dtype: DTypeName) -> object:
         """Execute an elementwise tensor operation."""
 
+    def reduce(self, op_name: str, value: object, out_dtype: DTypeName) -> object:
+        """Execute a reduction and return a rank-1 tensor result."""
+
 
 class TorchTensorBackend:
     """Torch-based implementation of tensor allocation and math semantics."""
@@ -61,6 +64,14 @@ class TorchTensorBackend:
         else:
             raise NotImplementedError(f"Unsupported Torch backend op: {op_name}")
         return result.to(dtype=self._resolve_dtype(out_dtype))
+
+    def reduce(self, op_name: str, value: object, out_dtype: DTypeName) -> object:
+        """Execute a supported reduction using Torch."""
+        if op_name == "sum":
+            result = value.reshape(-1).sum()
+        else:
+            raise NotImplementedError(f"Unsupported Torch backend reduction: {op_name}")
+        return result.reshape(1).to(dtype=self._resolve_dtype(out_dtype))
 
     def _resolve_dtype(self, dtype: DTypeName) -> object:
         """Map a textual dtype name to a Torch dtype object."""
