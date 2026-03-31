@@ -38,6 +38,90 @@ def _format_per_cycle(count: int, cycles: int) -> str:
 
 def emit_report(report_name: str, stats: dict[str, int]) -> None:
     """Print one curated report from the flattened stats snapshot."""
+    if report_name == "summary":
+        cycles = stats.get("cycles", 0)
+        issued = stats.get("instructions_issued", 0)
+        retired = stats.get("instructions_retired", 0)
+        total_stalls = sum(value for key, value in stats.items() if key.startswith("stall_"))
+        print(
+            f"report summary pipeline cycles={cycles} issued={issued} retired={retired} total_stalls={total_stalls}"
+        )
+
+        unit_names = sorted(
+            {
+                key.removesuffix(".issued_ops")
+                for key in stats
+                if key.endswith(".issued_ops")
+            }
+            | {
+                key.removesuffix(".busy_cycles")
+                for key in stats
+                if key.endswith(".busy_cycles")
+            }
+        )
+        busiest_unit = "none"
+        busiest_busy_cycles = -1
+        for unit_name in unit_names:
+            busy_cycles = stats.get(f"{unit_name}.busy_cycles", 0)
+            if busy_cycles > busiest_busy_cycles:
+                busiest_unit = unit_name
+                busiest_busy_cycles = busy_cycles
+        busiest_pct = _format_percentage(max(busiest_busy_cycles, 0), cycles)
+        print(
+            f"report summary unit={busiest_unit} busy_cycles={max(busiest_busy_cycles, 0)} busy_pct={busiest_pct} issued_ops={stats.get(f'{busiest_unit}.issued_ops', 0) if busiest_unit != 'none' else 0}"
+        )
+
+        sample_keys = sorted(key for key in stats if key.startswith("latency.") and key.endswith(".samples"))
+        top_opcode = "none"
+        top_total_cycles = -1
+        for key in sample_keys:
+            opcode = key.removeprefix("latency.").removesuffix(".samples")
+            total_cycles = stats.get(f"latency.{opcode}.total_cycles", 0)
+            if total_cycles > top_total_cycles:
+                top_opcode = opcode
+                top_total_cycles = total_cycles
+        if top_opcode == "none":
+            print("report summary latency opcode=none avg_cycles=0.00 max_cycles=0")
+        else:
+            samples = stats.get(f"latency.{top_opcode}.samples", 0)
+            total_cycles = stats.get(f"latency.{top_opcode}.total_cycles", 0)
+            max_cycles = stats.get(f"latency.{top_opcode}.max_cycles", 0)
+            print(
+                f"report summary latency opcode={top_opcode} avg_cycles={_format_average(total_cycles, samples)} max_cycles={max_cycles}"
+            )
+
+        memory_keys = sorted(
+            key
+            for key in stats
+            if key.endswith(".bytes_read") or key.endswith(".bytes_written")
+        )
+        top_memory_key = "none"
+        top_memory_bytes = -1
+        for key in memory_keys:
+            if stats[key] > top_memory_bytes:
+                top_memory_key = key
+                top_memory_bytes = stats[key]
+        print(
+            f"report summary memory key={top_memory_key} total_bytes={max(top_memory_bytes, 0)}"
+        )
+
+        contention_keys = sorted(
+            key
+            for key in stats
+            if key.startswith("memory.contention.resource.")
+            or key.startswith("scratchpad.bank_conflict.")
+            or key.startswith("scratchpad.port_conflict.")
+        )
+        top_contention_key = "none"
+        top_contention_value = -1
+        for key in contention_keys:
+            if stats[key] > top_contention_value:
+                top_contention_key = key
+                top_contention_value = stats[key]
+        print(
+            f"report summary contention key={top_contention_key} value={max(top_contention_value, 0)}"
+        )
+        return
     if report_name == "latency":
         sample_keys = sorted(key for key in stats if key.startswith("latency.") and key.endswith(".samples"))
         for key in sample_keys:
@@ -200,7 +284,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report",
         action="append",
-        choices=("latency", "occupancy", "memory", "contention", "stalls", "pipeline", "units", "isa"),
+        choices=("summary", "latency", "occupancy", "memory", "contention", "stalls", "pipeline", "units", "isa"),
         default=[],
         help="Print a curated report for one stats family. May be repeated.",
     )

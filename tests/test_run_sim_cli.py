@@ -71,13 +71,15 @@ class TestRunSimCLI:
         assert "trace cycle=" in result.stdout
 
     def test_run_sim_reports_curated_latency_and_occupancy_views(self) -> None:
-        """The CLI should print curated latency, occupancy, memory, stall, pipeline, unit, and ISA reports on request."""
+        """The CLI should print curated summary, latency, occupancy, memory, stall, pipeline, unit, and ISA reports on request."""
         repo_root = Path(__file__).resolve().parent.parent
         script = repo_root / "scripts" / "run_sim.py"
         result = subprocess.run(
             [
                 "python3",
                 str(script),
+                "--report",
+                "summary",
                 "--report",
                 "latency",
                 "--report",
@@ -101,6 +103,11 @@ class TestRunSimCLI:
             cwd=repo_root,
         )
 
+        assert "report summary pipeline cycles=3 issued=2 retired=2 total_stalls=0" in result.stdout
+        assert "report summary unit=scalar busy_cycles=2 busy_pct=66.67 issued_ops=2" in result.stdout
+        assert "report summary latency opcode=addi avg_cycles=1.00 max_cycles=1" in result.stdout
+        assert "report summary memory key=none total_bytes=0" in result.stdout
+        assert "report summary contention key=none value=0" in result.stdout
         assert "report latency opcode=addi" in result.stdout
         assert "avg_cycles=1.00" in result.stdout
         assert "report occupancy_summary unit=scalar samples=3 avg_depth=0.67 max_depth=1" in result.stdout
@@ -195,3 +202,35 @@ class TestRunSimCLI:
         captured = capsys.readouterr()
 
         assert "report pipeline cycles=10 issued=4 retired=3 issue_per_cycle=0.40 retire_per_cycle=0.30 total_stalls=3" in captured.out
+
+    def test_emit_report_prints_top_level_summary(self, capsys: object) -> None:
+        """The summary report should surface top pipeline, unit, latency, memory, and contention highlights."""
+        stats = {
+            "cycles": 10,
+            "instructions_issued": 5,
+            "instructions_retired": 4,
+            "scalar.issued_ops": 3,
+            "scalar.busy_cycles": 6,
+            "dma.issued_ops": 2,
+            "dma.busy_cycles": 4,
+            "latency.addi.samples": 3,
+            "latency.addi.total_cycles": 3,
+            "latency.addi.max_cycles": 1,
+            "latency.dma_copy.samples": 2,
+            "latency.dma_copy.total_cycles": 8,
+            "latency.dma_copy.max_cycles": 5,
+            "dram.bytes_read": 64,
+            "scratchpad.bytes_written": 32,
+            "memory.contention.resource.mem_dram": 2,
+            "scratchpad.port_conflict.sp_read_port_0": 3,
+            "stall_fence": 1,
+        }
+
+        emit_report("summary", stats)
+        captured = capsys.readouterr()
+
+        assert "report summary pipeline cycles=10 issued=5 retired=4 total_stalls=1" in captured.out
+        assert "report summary unit=scalar busy_cycles=6 busy_pct=60.00 issued_ops=3" in captured.out
+        assert "report summary latency opcode=dma_copy avg_cycles=4.00 max_cycles=5" in captured.out
+        assert "report summary memory key=dram.bytes_read total_bytes=64" in captured.out
+        assert "report summary contention key=scratchpad.port_conflict.sp_read_port_0 value=3" in captured.out
