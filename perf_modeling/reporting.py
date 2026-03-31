@@ -67,6 +67,76 @@ def emit_config_report(
         print(f"report config field={field_name} value={value}")
 
 
+def build_sweep_csv_rows(sweep_results: list[dict[str, object]]) -> list[tuple[str, ...]]:
+    """Build one flat CSV table for a multi-config sweep result set."""
+    rows = [
+        (
+            "config",
+            "cycles",
+            "issued",
+            "retired",
+            "halted",
+            "exit_code",
+            "trap",
+            "fetch_stall_cycles",
+            "fetch_stall_pct",
+            "busiest_unit",
+            "busiest_unit_busy_cycles",
+            "busiest_unit_busy_pct",
+            "latency_opcode",
+            "latency_avg_cycles",
+            "latency_max_cycles",
+            "event_avg_pending",
+            "event_max_pending",
+            "memory_key",
+            "memory_total_bytes",
+            "contention_key",
+            "contention_value",
+        )
+    ]
+    for result in sweep_results:
+        summary = result["summary"]
+        assert isinstance(summary, dict)
+        pipeline = summary["pipeline"]
+        busiest_unit = summary["busiest_unit"]
+        latency_hotspot = summary["latency_hotspot"]
+        event_queue = summary["event_queue"]
+        memory_hotspot = summary["memory_hotspot"]
+        contention_hotspot = summary["contention_hotspot"]
+        assert isinstance(pipeline, dict)
+        assert isinstance(busiest_unit, dict)
+        assert isinstance(latency_hotspot, dict)
+        assert isinstance(event_queue, dict)
+        assert isinstance(memory_hotspot, dict)
+        assert isinstance(contention_hotspot, dict)
+        rows.append(
+            (
+                str(result["config"]),
+                str(result["cycles"]),
+                str(pipeline["issued"]),
+                str(pipeline["retired"]),
+                str(result["halted"]),
+                "" if result["exit_code"] is None else str(result["exit_code"]),
+                "" if result["trap"] is None else str(result["trap"]),
+                str(pipeline["fetch_stall_cycles"]),
+                str(pipeline["fetch_stall_pct"]),
+                str(busiest_unit["name"]),
+                str(busiest_unit["busy_cycles"]),
+                str(busiest_unit["busy_pct"]),
+                str(latency_hotspot["opcode"]),
+                str(latency_hotspot["avg_cycles"]),
+                str(latency_hotspot["max_cycles"]),
+                str(event_queue["avg_pending"]),
+                str(event_queue["max_pending"]),
+                str(memory_hotspot["key"]),
+                str(memory_hotspot["total_bytes"]),
+                str(contention_hotspot["key"]),
+                str(contention_hotspot["value"]),
+            )
+        )
+    return rows
+
+
 def build_run_summary(stats: dict[str, int]) -> dict[str, object]:
     """Build one compact summary view from the flattened stats snapshot."""
     cycles = stats.get("cycles", 0)

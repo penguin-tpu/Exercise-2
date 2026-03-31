@@ -629,6 +629,7 @@ class TestRunSimCLI:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             sweep_path = temp_path / "out" / "sweep.json"
+            sweep_csv_path = temp_path / "out" / "sweep.csv"
             result = subprocess.run(
                 [
                     "uv",
@@ -641,6 +642,8 @@ class TestRunSimCLI:
                     "tiny_debug",
                     "--sweep-json",
                     str(sweep_path),
+                    "--sweep-csv",
+                    str(sweep_csv_path),
                 ],
                 check=True,
                 text=True,
@@ -648,6 +651,8 @@ class TestRunSimCLI:
                 cwd=repo_root,
             )
             sweep_payload = json.loads(sweep_path.read_text())
+            with sweep_csv_path.open(newline="") as handle:
+                sweep_rows = list(csv.reader(handle))
 
         assert "sweep program=builtin-smoke configs=2" in result.stdout
         assert "sweep config=baseline" in result.stdout
@@ -659,6 +664,10 @@ class TestRunSimCLI:
         assert sweep_payload["results"][1]["config_snapshot"]["core"]["vector"]["lanes"] == 4
         assert sweep_payload["results"][0]["cycles"] < sweep_payload["results"][1]["cycles"]
         assert sweep_payload["results"][0]["summary"]["pipeline"]["retired"] == 2
+        assert sweep_rows[0][:6] == ["config", "cycles", "issued", "retired", "halted", "exit_code"]
+        assert sweep_rows[1][0] == "baseline"
+        assert sweep_rows[2][0] == "tiny_debug"
+        assert int(sweep_rows[1][1]) < int(sweep_rows[2][1])
 
     def test_run_sim_rejects_single_run_reports_during_config_sweep(self) -> None:
         """The CLI should reject ambiguous single-run report flags during multi-config sweep mode."""
@@ -683,6 +692,28 @@ class TestRunSimCLI:
 
         assert result.returncode != 0
         assert "--report is not supported together with --sweep-config" in result.stderr
+
+    def test_run_sim_requires_sweep_config_for_sweep_csv(self) -> None:
+        """The CLI should reject sweep CSV export when sweep mode is not enabled."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                str(script),
+                "--sweep-csv",
+                "-",
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+            cwd=repo_root,
+        )
+
+        assert result.returncode != 0
+        assert "--sweep-csv requires at least one --sweep-config entry" in result.stderr
 
     def test_run_sim_prints_filtered_stats_and_trace_tail(self) -> None:
         """The CLI should print filtered stat families and a bounded trace tail on request."""

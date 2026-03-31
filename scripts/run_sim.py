@@ -26,7 +26,7 @@ from perf_modeling.config import (
     snapshot_config,
 )
 from perf_modeling.decode import Decoder
-from perf_modeling.reporting import build_run_summary, emit_config_report, emit_report
+from perf_modeling.reporting import build_run_summary, build_sweep_csv_rows, emit_config_report, emit_report
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -73,6 +73,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Optional path for a JSON export of multi-config sweep results, or '-' to write JSON to stdout.",
+    )
+    parser.add_argument(
+        "--sweep-csv",
+        type=str,
+        default=None,
+        help="Optional path for a CSV export of multi-config sweep results, or '-' to write CSV to stdout.",
     )
     parser.add_argument(
         "--dram-load",
@@ -210,6 +216,8 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
     """Validate combinations of CLI arguments before starting simulation."""
     if args.sweep_json is not None and not args.sweep_config:
         parser.error("--sweep-json requires at least one --sweep-config entry.")
+    if args.sweep_csv is not None and not args.sweep_config:
+        parser.error("--sweep-csv requires at least one --sweep-config entry.")
     if not args.sweep_config:
         return
     if args.stats_json is not None:
@@ -303,6 +311,16 @@ def main() -> None:
             else:
                 sweep_json_path = prepare_output_path(args.sweep_json, args.output_dir)
                 sweep_json_path.write_text(serialized + "\n")
+        if args.sweep_csv is not None:
+            rows = build_sweep_csv_rows(sweep_results)
+            if args.sweep_csv == "-":
+                writer = csv.writer(sys.stdout)
+                writer.writerows(rows)
+            else:
+                sweep_csv_path = prepare_output_path(args.sweep_csv, args.output_dir)
+                with sweep_csv_path.open("w", newline="") as handle:
+                    writer = csv.writer(handle)
+                    writer.writerows(rows)
         return
     engine = SimulatorEngine(config=get_named_config(args.config), program=program)
     config_snapshot = snapshot_config(engine.config)
