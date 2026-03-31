@@ -44,6 +44,13 @@ def _matches_report_filter(value: str, report_match: str | None) -> bool:
     return report_match.lower() in value.lower()
 
 
+def _prepare_output_path(path_text: str) -> Path:
+    """Create parent directories for one file output target and return the path."""
+    path = Path(path_text)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def emit_report(
     report_name: str,
     stats: dict[str, int],
@@ -415,7 +422,7 @@ def main() -> None:
         if args.stats_json == "-":
             print(serialized)
         else:
-            Path(args.stats_json).write_text(serialized + "\n")
+            _prepare_output_path(args.stats_json).write_text(serialized + "\n")
     if args.stats_csv is not None:
         rows = [("key", "value")]
         rows.extend((key, str(value)) for key, value in sorted(stats.items()))
@@ -423,7 +430,7 @@ def main() -> None:
             writer = csv.writer(sys.stdout)
             writer.writerows(rows)
         else:
-            with Path(args.stats_csv).open("w", newline="") as handle:
+            with _prepare_output_path(args.stats_csv).open("w", newline="") as handle:
                 writer = csv.writer(handle)
                 writer.writerows(rows)
     if args.trace_json is not None:
@@ -439,7 +446,7 @@ def main() -> None:
         if args.trace_json == "-":
             print(serialized)
         else:
-            Path(args.trace_json).write_text(serialized + "\n")
+            _prepare_output_path(args.trace_json).write_text(serialized + "\n")
     if args.trace_csv is not None:
         rows = [("cycle", "kind", "message")]
         rows.extend((str(record.cycle), record.kind, record.message) for record in engine.trace.records)
@@ -447,7 +454,7 @@ def main() -> None:
             writer = csv.writer(sys.stdout)
             writer.writerows(rows)
         else:
-            with Path(args.trace_csv).open("w", newline="") as handle:
+            with _prepare_output_path(args.trace_csv).open("w", newline="") as handle:
                 writer = csv.writer(handle)
                 writer.writerows(rows)
 

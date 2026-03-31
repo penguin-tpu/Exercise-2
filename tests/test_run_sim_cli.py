@@ -20,8 +20,8 @@ class TestRunSimCLI:
         script = repo_root / "scripts" / "run_sim.py"
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            stats_path = temp_path / "stats.json"
-            trace_path = temp_path / "trace.json"
+            stats_path = temp_path / "out" / "stats.json"
+            trace_path = temp_path / "out" / "trace.json"
             result = subprocess.run(
                 [
                     "uv",
@@ -56,7 +56,7 @@ class TestRunSimCLI:
         script = repo_root / "scripts" / "run_sim.py"
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            stats_csv_path = temp_path / "stats.csv"
+            stats_csv_path = temp_path / "out" / "stats.csv"
             result = subprocess.run(
                 [
                     "uv",
@@ -85,7 +85,7 @@ class TestRunSimCLI:
         script = repo_root / "scripts" / "run_sim.py"
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            trace_csv_path = temp_path / "trace.csv"
+            trace_csv_path = temp_path / "out" / "trace.csv"
             result = subprocess.run(
                 [
                     "uv",
