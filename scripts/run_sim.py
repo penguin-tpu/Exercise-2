@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from pathlib import Path
@@ -311,6 +312,12 @@ def parse_args() -> argparse.Namespace:
         help="Optional path for a JSON stats export, or '-' to write JSON to stdout.",
     )
     parser.add_argument(
+        "--stats-csv",
+        type=str,
+        default=None,
+        help="Optional path for a CSV stats export, or '-' to write CSV to stdout.",
+    )
+    parser.add_argument(
         "--trace-json",
         type=str,
         default=None,
@@ -403,6 +410,16 @@ def main() -> None:
             print(serialized)
         else:
             Path(args.stats_json).write_text(serialized + "\n")
+    if args.stats_csv is not None:
+        rows = [("key", "value")]
+        rows.extend((key, str(value)) for key, value in sorted(stats.items()))
+        if args.stats_csv == "-":
+            writer = csv.writer(sys.stdout)
+            writer.writerows(rows)
+        else:
+            with Path(args.stats_csv).open("w", newline="") as handle:
+                writer = csv.writer(handle)
+                writer.writerows(rows)
     if args.trace_json is not None:
         trace_payload = [
             {
