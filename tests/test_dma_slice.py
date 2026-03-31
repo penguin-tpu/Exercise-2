@@ -51,3 +51,27 @@ class TestDMASlice:
         assert engine.state.scratchpad.read(0, 16) == b"abcdefghijklmnop"
         assert stats["dma.issued_ops"] == 1
         assert stats["stall_fence"] >= 1
+
+    def test_dma_queue_occupancy_histogram_tracks_multiple_inflight_transfers(self) -> None:
+        """Back-to-back DMA copies should populate queue-occupancy histogram buckets."""
+        scratchpad_base = self.make_config().machine.scratchpad_base_address
+        program = (
+            ProgramBuilder(base_address=0x1000)
+            .emit_dma_copy(source_address=0x300, dest_address=scratchpad_base, num_bytes=16)
+            .emit_dma_copy(source_address=0x340, dest_address=scratchpad_base + 16, num_bytes=16)
+            .emit("fence")
+            .emit("ebreak")
+            .build(name="dma-queue-occupancy")
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x300, b"abcdefghijklmnop")
+        engine.state.dram.write(0x340, b"qrstuvwxyzABCDEF")
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert engine.state.scratchpad.read(0, 16) == b"abcdefghijklmnop"
+        assert engine.state.scratchpad.read(16, 16) == b"qrstuvwxyzABCDEF"
+        assert stats["dma.issued_ops"] == 2
+        assert stats["dma.queue_occupancy.1"] >= 1
+        assert stats["dma.queue_occupancy.2"] >= 1

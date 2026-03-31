@@ -26,6 +26,10 @@ class SimulationStats:
         """Record one busy cycle for a modeled unit."""
         self.per_unit_busy_cycles[unit_name] += 1
 
+    def record_queue_occupancy(self, unit_name: str, depth: int) -> None:
+        """Record one sampled queue-occupancy bucket for a unit."""
+        self.counters[f"{unit_name}.queue_occupancy.{depth}"] += 1
+
     def snapshot(self) -> dict[str, int]:
         """Return a flat dictionary representation of accumulated counters."""
         data = dict(self.counters)

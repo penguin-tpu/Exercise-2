@@ -205,6 +205,7 @@ class SimulatorEngine:
         """Update cycle-level statistics after issue and completion work."""
         self.stats.increment("cycles", 1)
         for unit in self.iter_units():
+            self.stats.record_queue_occupancy(unit.name, unit.status.queued_ops)
             if unit.is_busy():
                 self.stats.record_busy_cycle(unit.name)
 
