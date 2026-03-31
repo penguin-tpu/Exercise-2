@@ -193,6 +193,10 @@ class SimulatorEngine:
         for key, value in plan.stats.items():
             if isinstance(value, int):
                 self.stats.increment(key, value)
+        self.stats.record_instruction_latency(
+            instruction.opcode,
+            max(0, plan.completion_cycle - self.cycle),
+        )
         if instruction.metadata.get("is_control", False):
             self.state.fetch_stalled = True
         else:

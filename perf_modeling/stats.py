@@ -30,6 +30,13 @@ class SimulationStats:
         """Record one sampled queue-occupancy bucket for a unit."""
         self.counters[f"{unit_name}.queue_occupancy.{depth}"] += 1
 
+    def record_instruction_latency(self, opcode: str, latency_cycles: int) -> None:
+        """Record one planned instruction-latency sample."""
+        self.counters[f"latency.{opcode}.samples"] += 1
+        self.counters[f"latency.{opcode}.total_cycles"] += latency_cycles
+        max_key = f"latency.{opcode}.max_cycles"
+        self.counters[max_key] = max(self.counters.get(max_key, 0), latency_cycles)
+
     def snapshot(self) -> dict[str, int]:
         """Return a flat dictionary representation of accumulated counters."""
         data = dict(self.counters)
