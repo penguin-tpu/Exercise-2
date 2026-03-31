@@ -2,6 +2,13 @@
 
 Combined functional and performance model for an ML-oriented accelerator.
 
+Reference docs:
+
+- `docs/README.md` for the documentation index
+- `docs/specs/architecture_specification.md` for the programmer-visible machine model
+- `docs/specs/microarchitecture_specification.md` for the timing and execution model
+- `logs/README.md` for interval summaries and recent progress logs
+
 The simulator is:
 
 - execution-driven
@@ -163,5 +170,6 @@ Focused areas covered today include:
 - `tests/`: RV32I, timing, workload, and CLI regressions
 - `tests/workload/`: runnable assembly examples
 - `toolchains/riscv32/`: local GNU RISC-V assembly wrapper
+- `docs/`: architecture, microarchitecture, and design documents
 - `logs/`: timestamped progress logs
 - `notes/modeling.md`: high-level design plan

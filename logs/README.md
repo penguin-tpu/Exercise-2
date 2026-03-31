@@ -1,26 +1,15 @@
-# Logs
+# Progress Log Index
 
-Use this directory for periodic progress logs during active work on the repository.
+## Interval Summaries
 
-Required cadence:
+- [2026-03-31 02:00 to 04:00](/home/tk/Desktop/Architect/logs/intervals/2026-03-31_02-00_to_04-00_summary.md)
+- [2026-03-31 11:00 to 13:00](/home/tk/Desktop/Architect/logs/intervals/2026-03-31_11-00_to_13-00_summary.md)
+- [2026-03-31 13:00 to 15:00](/home/tk/Desktop/Architect/logs/intervals/2026-03-31_13-00_to_15-00_summary.md)
 
-- write a log every 30 minutes while actively working
-- also write a log when handing off substantial partial work
+## Latest Checkpoints
 
-Each log should include:
+- [2026-03-31 14:56](/home/tk/Desktop/Architect/logs/2026-03-31_14-56_progress.md)
+- [2026-03-31 14:59](/home/tk/Desktop/Architect/logs/2026-03-31_14-59_progress.md)
+- [2026-03-31 15:02](/home/tk/Desktop/Architect/logs/2026-03-31_15-02_progress.md)
 
-- current progress
-- current implementation status
-- current roadblocks
-- current questions
-- pending design decisions
-- next-step plan
-
-Recommended filename format:
-
-- `YYYY-MM-DD_HH-MM_progress.md`
-
-Examples:
-
-- `2026-03-31_14-00_progress.md`
-- `2026-03-31_16-30_progress.md`
+For older detailed checkpoints, inspect the timestamped `*_progress.md` files directly in this directory.
