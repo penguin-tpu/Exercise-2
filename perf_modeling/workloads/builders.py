@@ -154,3 +154,66 @@ class ProgramBuilder:
             .emit("ebreak")
             .build(name=f"{problem.name}-dma-smoke")
         )
+
+    def build_vector_add_smoke_test(
+        self,
+        problem: KernelProblem,
+        lhs_address: int,
+        rhs_address: int,
+        output_address: int,
+        dtype: str,
+    ) -> Program:
+        """Construct a tensor-load, vector-add, tensor-store microbenchmark program."""
+        if len(problem.input_shapes) != 2:
+            raise ValueError("Vector-add smoke tests expect exactly two input tensors.")
+        if problem.input_shapes[0] != problem.input_shapes[1]:
+            raise ValueError("Vector-add smoke tests expect matching input shapes.")
+        if problem.output_shape != problem.input_shapes[0]:
+            raise ValueError("Vector-add smoke-test output shape must match the input tensors.")
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_tensor_load(dest_tensor=0, address=lhs_address, shape=problem.input_shapes[0], dtype=dtype)
+            .emit_tensor_load(dest_tensor=1, address=rhs_address, shape=problem.input_shapes[1], dtype=dtype)
+            .emit_vector_add(dest_tensor=2, lhs_tensor=0, rhs_tensor=1, out_dtype=dtype)
+            .emit_tensor_store(source_tensor=2, address=output_address)
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-vector-add-smoke")
+        )
+
+    def build_matmul_smoke_test(
+        self,
+        problem: KernelProblem,
+        lhs_address: int,
+        rhs_address: int,
+        output_address: int,
+        acc_dtype: str,
+        out_dtype: str,
+    ) -> Program:
+        """Construct a tensor-load, matmul, tensor-store microbenchmark program."""
+        if len(problem.input_shapes) != 2:
+            raise ValueError("Matmul smoke tests expect exactly two input tensors.")
+        lhs_shape = problem.input_shapes[0]
+        rhs_shape = problem.input_shapes[1]
+        if len(lhs_shape) != 2 or len(rhs_shape) != 2:
+            raise ValueError("Matmul smoke tests expect rank-2 input tensors.")
+        if lhs_shape[1] != rhs_shape[0]:
+            raise ValueError("Matmul smoke tests expect compatible matrix inner dimensions.")
+        if problem.output_shape != (lhs_shape[0], rhs_shape[1]):
+            raise ValueError("Matmul smoke-test output shape must match matrix multiplication semantics.")
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_tensor_load(dest_tensor=0, address=lhs_address, shape=lhs_shape, dtype=out_dtype)
+            .emit_tensor_load(dest_tensor=1, address=rhs_address, shape=rhs_shape, dtype=out_dtype)
+            .emit_matmul(
+                dest_tensor=2,
+                lhs_tensor=0,
+                rhs_tensor=1,
+                acc_dtype=acc_dtype,
+                out_dtype=out_dtype,
+            )
+            .emit_tensor_store(source_tensor=2, address=output_address)
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-matmul-smoke")
+        )

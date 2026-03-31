@@ -103,3 +103,29 @@ class TestToolchainWrapper:
         )
         assert engine.state.halted
         assert engine.state.exit_code == 52
+
+    def test_assemble_to_elf_handles_data_and_bss_sections(self) -> None:
+        """The wrapper should link ELF images with initialized and zero-initialized data."""
+        engine = self.build_and_run(
+            ".section .data\n"
+            "seed:\n"
+            "  .word 11\n"
+            ".section .bss\n"
+            ".align 2\n"
+            "scratch:\n"
+            "  .space 4\n"
+            ".section .text\n"
+            ".globl _start\n"
+            "_start:\n"
+            "  la t0, seed\n"
+            "  lw t1, 0(t0)\n"
+            "  la t2, scratch\n"
+            "  lw t3, 0(t2)\n"
+            "  add a0, t1, t3\n"
+            "  sw a0, 0(t2)\n"
+            "  lw a0, 0(t2)\n"
+            "  ebreak\n",
+            max_cycles=200,
+        )
+        assert engine.state.halted
+        assert engine.state.exit_code == 11
