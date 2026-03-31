@@ -19,7 +19,7 @@ This directory contains the repo-local RV32I build path used by the simulator te
 ## Example
 
 ```bash
-python3 toolchains/riscv32/bootstrap_gnu_binutils.py
-python3 toolchains/riscv32/assemble_to_elf.py program.S --output build/program.elf
+uv run python toolchains/riscv32/bootstrap_gnu_binutils.py
+uv run python toolchains/riscv32/assemble_to_elf.py program.S --output build/program.elf
 uv run python scripts/run_sim.py build/program.elf
 ```

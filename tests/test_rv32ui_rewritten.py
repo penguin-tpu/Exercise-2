@@ -53,7 +53,9 @@ def build_and_run(source_path: Path, max_cycles: int) -> SimulatorEngine:
         env["PYTHONPATH"] = str(repo_root)
         subprocess.run(
             [
-                "python3",
+                "uv",
+                "run",
+                "python",
                 str(script),
                 str(source_path),
                 "--output",
@@ -139,10 +141,17 @@ CASES = (
     Rv32uiCase(source_name="addi.S", exit_code=15, covered_opcodes=("addi", "slti", "sltiu", "ebreak")),
     Rv32uiCase(source_name="add.S", exit_code=22, covered_opcodes=("add", "sub")),
     Rv32uiCase(source_name="and.S", exit_code=40, covered_opcodes=("sll", "srl", "sra", "xor", "and")),
-    Rv32uiCase(source_name="beq.S", exit_code=15, covered_opcodes=("beq", "bne", "blt", "bge", "bltu", "bgeu")),
+    Rv32uiCase(source_name="auipc.S", exit_code=7, covered_opcodes=("auipc",)),
+    Rv32uiCase(source_name="beq.S", exit_code=11, covered_opcodes=("beq",)),
+    Rv32uiCase(source_name="bge.S", exit_code=14, covered_opcodes=("bge",)),
+    Rv32uiCase(source_name="bgeu.S", exit_code=16, covered_opcodes=("bgeu",)),
+    Rv32uiCase(source_name="blt.S", exit_code=13, covered_opcodes=("blt",)),
+    Rv32uiCase(source_name="bltu.S", exit_code=15, covered_opcodes=("bltu",)),
+    Rv32uiCase(source_name="bne.S", exit_code=12, covered_opcodes=("bne",)),
     Rv32uiCase(source_name="ecall.S", exit_code=17, covered_opcodes=("ecall",)),
     Rv32uiCase(source_name="fence.S", exit_code=33, covered_opcodes=("fence",)),
-    Rv32uiCase(source_name="jal.S", exit_code=15, covered_opcodes=("auipc", "jal", "jalr")),
+    Rv32uiCase(source_name="jal.S", exit_code=15, covered_opcodes=("jal",)),
+    Rv32uiCase(source_name="jalr.S", exit_code=18, covered_opcodes=("jalr",)),
     Rv32uiCase(source_name="lh.S", exit_code=4660, covered_opcodes=("lh",)),
     Rv32uiCase(
         source_name="lw.S",

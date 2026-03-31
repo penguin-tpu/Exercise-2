@@ -43,7 +43,9 @@ class TestToolchainWrapper:
             source.write_text(assembly_source)
             subprocess.run(
                 [
-                    "python3",
+                    "uv",
+                    "run",
+                    "python",
                     str(script),
                     str(source),
                     "--output",
@@ -78,7 +80,9 @@ class TestToolchainWrapper:
             )
             subprocess.run(
                 [
-                    "python3",
+                    "uv",
+                    "run",
+                    "python",
                     str(script),
                     str(source),
                     "--output",
@@ -111,7 +115,9 @@ class TestToolchainWrapper:
             )
             result = subprocess.run(
                 [
-                    "python3",
+                    "uv",
+                    "run",
+                    "python",
                     str(script),
                     str(source),
                     "--output",

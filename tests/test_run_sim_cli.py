@@ -24,7 +24,9 @@ class TestRunSimCLI:
             trace_path = temp_path / "trace.json"
             result = subprocess.run(
                 [
-                    "python3",
+                    "uv",
+                    "run",
+                    "python",
                     str(script),
                     "--stats-json",
                     str(stats_path),
@@ -57,7 +59,9 @@ class TestRunSimCLI:
             stats_csv_path = temp_path / "stats.csv"
             result = subprocess.run(
                 [
-                    "python3",
+                    "uv",
+                    "run",
+                    "python",
                     str(script),
                     "--stats-csv",
                     str(stats_csv_path),
@@ -84,7 +88,9 @@ class TestRunSimCLI:
             trace_csv_path = temp_path / "trace.csv"
             result = subprocess.run(
                 [
-                    "python3",
+                    "uv",
+                    "run",
+                    "python",
                     str(script),
                     "--trace-csv",
                     str(trace_csv_path),
@@ -108,7 +114,9 @@ class TestRunSimCLI:
         script = repo_root / "scripts" / "run_sim.py"
         result = subprocess.run(
             [
-                "python3",
+                "uv",
+                "run",
+                "python",
                 str(script),
                 "--print-stats-prefix",
                 "latency.",
@@ -131,7 +139,9 @@ class TestRunSimCLI:
         script = repo_root / "scripts" / "run_sim.py"
         result = subprocess.run(
             [
-                "python3",
+                "uv",
+                "run",
+                "python",
                 str(script),
                 "--report",
                 "summary",
@@ -182,7 +192,9 @@ class TestRunSimCLI:
         script = repo_root / "scripts" / "run_sim.py"
         result = subprocess.run(
             [
-                "python3",
+                "uv",
+                "run",
+                "python",
                 str(script),
                 "--report",
                 "latency",
@@ -204,7 +216,9 @@ class TestRunSimCLI:
         script = repo_root / "scripts" / "run_sim.py"
         result = subprocess.run(
             [
-                "python3",
+                "uv",
+                "run",
+                "python",
                 str(script),
                 "--report",
                 "latency",

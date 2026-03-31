@@ -24,8 +24,8 @@ Functional semantics define what happens. Timing and resource logic define when 
 ## Setup Commands
 
 - Create or sync the environment: `uv sync`
-- Run the default entrypoint: `uv run python main.py`
-- Verify the package imports and syntax: `python3 -m compileall perf_modeling tests`
+- Run the default entrypoint: `uv run python scripts/run_sim.py`
+- Verify the package imports and syntax: `uv run python -m compileall perf_modeling tests`
 
 ## Operating Cadence
 
@@ -43,6 +43,8 @@ Functional semantics define what happens. Timing and resource logic define when 
 - Push to remote everytime you make commit.
 - Milestone commits should summarize the functional change, not just “progress” or “WIP”.
 - User instructions are in INSTRUCTIONS.md. It is formatted as a Markdown checklist. Check this file from time to time, and mark (`-[x]`) the entries that you have read and started working on.
+- If you are unsure about certain items under INSTRUCTIONS.md, ask clarification questions regarding that item in QUESTIONS.md. If your question gets answered, remove that entry from QUESTIONS.md.
+- Feel free to spawn subagents to parallize tasks.
 
 ## Dev Environment Tips
 
@@ -117,7 +119,7 @@ Modeling rules:
 
 ## Testing Instructions
 
-- After structural edits, run: `python3 -m compileall perf_modeling tests`
+- After structural edits, run: `uv run python -m compileall perf_modeling tests`
 - As real behavior is added, validate at three levels:
   - instruction correctness
   - microarchitectural timing behavior
