@@ -71,7 +71,7 @@ class TestRunSimCLI:
         assert "trace cycle=" in result.stdout
 
     def test_run_sim_reports_curated_latency_and_occupancy_views(self) -> None:
-        """The CLI should print curated latency, occupancy, stall, unit, and ISA reports on request."""
+        """The CLI should print curated latency, occupancy, stall, pipeline, unit, and ISA reports on request."""
         repo_root = Path(__file__).resolve().parent.parent
         script = repo_root / "scripts" / "run_sim.py"
         result = subprocess.run(
@@ -84,6 +84,8 @@ class TestRunSimCLI:
                 "occupancy",
                 "--report",
                 "stalls",
+                "--report",
+                "pipeline",
                 "--report",
                 "units",
                 "--report",
@@ -99,6 +101,7 @@ class TestRunSimCLI:
         assert "avg_cycles=1.00" in result.stdout
         assert "report occupancy_summary unit=scalar samples=3 avg_depth=0.67 max_depth=1" in result.stdout
         assert "report stalls_summary total=0 categories=0" in result.stdout
+        assert "report pipeline cycles=3 issued=2 retired=2 issue_per_cycle=0.67 retire_per_cycle=0.67 total_stalls=0" in result.stdout
         assert "report occupancy unit=scalar depth=1" in result.stdout
         assert "report units unit=scalar issued_ops=2 busy_cycles=2 busy_pct=66.67 max_queue_occupancy=1" in result.stdout
         assert "report isa opcode=addi issued=1 total_cycles=1" in result.stdout
@@ -161,3 +164,18 @@ class TestRunSimCLI:
         assert "report stalls_summary total=5 categories=2" in captured.out
         assert "report stalls key=stall_fence value=2" in captured.out
         assert "report stalls key=stall_scalar_dependency value=3" in captured.out
+
+    def test_emit_report_prints_pipeline_summary(self, capsys: object) -> None:
+        """The pipeline report should summarize cycles, throughput, and total stalls."""
+        stats = {
+            "cycles": 10,
+            "instructions_issued": 4,
+            "instructions_retired": 3,
+            "stall_fence": 2,
+            "stall_scalar_dependency": 1,
+        }
+
+        emit_report("pipeline", stats)
+        captured = capsys.readouterr()
+
+        assert "report pipeline cycles=10 issued=4 retired=3 issue_per_cycle=0.40 retire_per_cycle=0.30 total_stalls=3" in captured.out

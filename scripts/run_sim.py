@@ -29,6 +29,13 @@ def _format_percentage(numerator: int, denominator: int) -> str:
     return f"{(numerator * 100) / denominator:.2f}"
 
 
+def _format_per_cycle(count: int, cycles: int) -> str:
+    """Format one per-cycle rate for human-readable reports."""
+    if cycles <= 0:
+        return "0.00"
+    return f"{count / cycles:.2f}"
+
+
 def emit_report(report_name: str, stats: dict[str, int]) -> None:
     """Print one curated report from the flattened stats snapshot."""
     if report_name == "latency":
@@ -86,6 +93,15 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
         print(f"report stalls_summary total={total_stalls} categories={len(stall_keys)}")
         for key in stall_keys:
             print(f"report stalls key={key} value={stats[key]}")
+        return
+    if report_name == "pipeline":
+        cycles = stats.get("cycles", 0)
+        issued = stats.get("instructions_issued", 0)
+        retired = stats.get("instructions_retired", 0)
+        total_stalls = sum(value for key, value in stats.items() if key.startswith("stall_"))
+        print(
+            f"report pipeline cycles={cycles} issued={issued} retired={retired} issue_per_cycle={_format_per_cycle(issued, cycles)} retire_per_cycle={_format_per_cycle(retired, cycles)} total_stalls={total_stalls}"
+        )
         return
     if report_name == "units":
         total_cycles = stats.get("cycles", 0)
@@ -161,7 +177,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report",
         action="append",
-        choices=("latency", "occupancy", "memory", "contention", "stalls", "units", "isa"),
+        choices=("latency", "occupancy", "memory", "contention", "stalls", "pipeline", "units", "isa"),
         default=[],
         help="Print a curated report for one stats family. May be repeated.",
     )
