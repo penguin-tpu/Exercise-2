@@ -71,7 +71,7 @@ class TestRunSimCLI:
         assert "trace cycle=" in result.stdout
 
     def test_run_sim_reports_curated_latency_and_occupancy_views(self) -> None:
-        """The CLI should print curated latency, occupancy, stall, pipeline, unit, and ISA reports on request."""
+        """The CLI should print curated latency, occupancy, memory, stall, pipeline, unit, and ISA reports on request."""
         repo_root = Path(__file__).resolve().parent.parent
         script = repo_root / "scripts" / "run_sim.py"
         result = subprocess.run(
@@ -82,6 +82,8 @@ class TestRunSimCLI:
                 "latency",
                 "--report",
                 "occupancy",
+                "--report",
+                "memory",
                 "--report",
                 "stalls",
                 "--report",
@@ -100,6 +102,8 @@ class TestRunSimCLI:
         assert "report latency opcode=addi" in result.stdout
         assert "avg_cycles=1.00" in result.stdout
         assert "report occupancy_summary unit=scalar samples=3 avg_depth=0.67 max_depth=1" in result.stdout
+        assert "report memory_summary direction=read total_bytes=0" in result.stdout
+        assert "report memory_summary direction=write total_bytes=0" in result.stdout
         assert "report stalls_summary total=0 categories=0" in result.stdout
         assert "report pipeline cycles=3 issued=2 retired=2 issue_per_cycle=0.67 retire_per_cycle=0.67 total_stalls=0" in result.stdout
         assert "report occupancy unit=scalar depth=1" in result.stdout
@@ -111,6 +115,7 @@ class TestRunSimCLI:
         stats = {
             "cycles": 5,
             "dram.bytes_read": 32,
+            "scratchpad.bytes_read": 16,
             "scratchpad.bytes_written": 16,
             "dram.contention_stalls": 2,
             "memory.contention.resource.mem_dram": 2,
@@ -129,8 +134,11 @@ class TestRunSimCLI:
         emit_report("isa", stats)
         captured = capsys.readouterr()
 
-        assert "report memory key=dram.bytes_read value=32" in captured.out
-        assert "report memory key=scratchpad.bytes_written value=16" in captured.out
+        assert "report memory_summary direction=read total_bytes=48" in captured.out
+        assert "report memory key=dram.bytes_read value=32 pct=66.67" in captured.out
+        assert "report memory key=scratchpad.bytes_read value=16 pct=33.33" in captured.out
+        assert "report memory_summary direction=write total_bytes=16" in captured.out
+        assert "report memory key=scratchpad.bytes_written value=16 pct=100.00" in captured.out
         assert "report contention key=dram.contention_stalls value=2" in captured.out
         assert "report contention key=scratchpad.bank_conflict.sp_bank_0 value=1" in captured.out
         assert "report units unit=scalar issued_ops=4 busy_cycles=4 busy_pct=80.00 max_queue_occupancy=2" in captured.out

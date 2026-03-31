@@ -70,13 +70,20 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
             print(f"report occupancy unit={unit_name} depth={depth} samples={stats[key]}")
         return
     if report_name == "memory":
-        memory_keys = sorted(
-            key
-            for key in stats
-            if key.endswith(".bytes_read") or key.endswith(".bytes_written")
-        )
-        for key in memory_keys:
-            print(f"report memory key={key} value={stats[key]}")
+        read_keys = sorted(key for key in stats if key.endswith(".bytes_read"))
+        write_keys = sorted(key for key in stats if key.endswith(".bytes_written"))
+        total_read = sum(stats[key] for key in read_keys)
+        total_write = sum(stats[key] for key in write_keys)
+        print(f"report memory_summary direction=read total_bytes={total_read}")
+        for key in read_keys:
+            print(
+                f"report memory key={key} value={stats[key]} pct={_format_percentage(stats[key], total_read)}"
+            )
+        print(f"report memory_summary direction=write total_bytes={total_write}")
+        for key in write_keys:
+            print(
+                f"report memory key={key} value={stats[key]} pct={_format_percentage(stats[key], total_write)}"
+            )
         return
     if report_name == "contention":
         contention_keys = sorted(
