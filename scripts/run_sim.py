@@ -100,6 +100,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reverse the selected sweep ordering metric.",
     )
     parser.add_argument(
+        "--sweep-limit",
+        type=int,
+        default=0,
+        help="Optional maximum number of ranked sweep results to print and export. Zero means no limit.",
+    )
+    parser.add_argument(
         "--dram-load",
         action="append",
         type=parse_image_load_spec,
@@ -233,6 +239,8 @@ def parse_args() -> tuple[argparse.ArgumentParser, argparse.Namespace]:
 
 def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     """Validate combinations of CLI arguments before starting simulation."""
+    if args.sweep_limit < 0:
+        parser.error("--sweep-limit must be zero or greater.")
     if args.sweep_json is not None and not args.sweep_config:
         parser.error("--sweep-json requires at least one --sweep-config entry.")
     if args.sweep_csv is not None and not args.sweep_config:
@@ -317,6 +325,8 @@ def main() -> None:
                 }
             )
         sweep_results = sort_sweep_results(sweep_results, args.sweep_sort, args.sweep_desc)
+        if args.sweep_limit > 0:
+            sweep_results = sweep_results[: args.sweep_limit]
         for index, result in enumerate(sweep_results, start=1):
             sort_value = extract_sweep_sort_value(result, args.sweep_sort)
             summary = result["summary"]
@@ -335,6 +345,7 @@ def main() -> None:
                     "field": args.sweep_sort,
                     "descending": args.sweep_desc,
                 },
+                "limit": args.sweep_limit if args.sweep_limit > 0 else None,
                 "results": sweep_results,
             }
             serialized = json.dumps(sweep_payload, indent=2, sort_keys=True)

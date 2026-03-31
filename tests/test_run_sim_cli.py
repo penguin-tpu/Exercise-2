@@ -719,6 +719,43 @@ class TestRunSimCLI:
         assert result.returncode != 0
         assert "--sweep-csv requires at least one --sweep-config entry" in result.stderr
 
+    def test_run_sim_applies_sweep_limit_after_sorting(self) -> None:
+        """The CLI should be able to keep only the top-ranked sweep results."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            sweep_path = temp_path / "out" / "limited.json"
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    "--sweep-config",
+                    "baseline",
+                    "--sweep-config",
+                    "tiny_debug",
+                    "--sweep-sort",
+                    "cycles",
+                    "--sweep-desc",
+                    "--sweep-limit",
+                    "1",
+                    "--sweep-json",
+                    str(sweep_path),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            sweep_payload = json.loads(sweep_path.read_text())
+
+        assert "sweep rank=1 config=tiny_debug sort=cycles sort_value=4" in result.stdout
+        assert "sweep rank=2" not in result.stdout
+        assert sweep_payload["limit"] == 1
+        assert [entry["config"] for entry in sweep_payload["results"]] == ["tiny_debug"]
+
     def test_run_sim_prints_filtered_stats_and_trace_tail(self) -> None:
         """The CLI should print filtered stat families and a bounded trace tail on request."""
         repo_root = Path(__file__).resolve().parent.parent

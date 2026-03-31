@@ -68,6 +68,7 @@ Useful common options:
 - `--sweep-json sweep.json`
 - `--sweep-csv sweep.csv`
 - `--sweep-sort cycles --sweep-desc`
+- `--sweep-limit 3`
 - `--output-dir out`
 - `--stats-json stats.json`
 - `--trace-json trace.json`
@@ -105,6 +106,7 @@ uv run python scripts/run_sim.py tests/workload/scalar_int_matmul.S \
   --sweep-config tiny_debug \
   --sweep-sort cycles \
   --sweep-desc \
+  --sweep-limit 2 \
   --sweep-json sweep.json \
   --sweep-csv sweep.csv
 ```
