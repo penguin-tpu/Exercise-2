@@ -59,6 +59,24 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
         for key in contention_keys:
             print(f"report contention key={key} value={stats[key]}")
         return
+    if report_name == "units":
+        unit_names = sorted(
+            {
+                key.removesuffix(".issued_ops")
+                for key in stats
+                if key.endswith(".issued_ops")
+            }
+            | {
+                key.removesuffix(".busy_cycles")
+                for key in stats
+                if key.endswith(".busy_cycles")
+            }
+        )
+        for unit_name in unit_names:
+            print(
+                f"report units unit={unit_name} issued_ops={stats.get(f'{unit_name}.issued_ops', 0)} busy_cycles={stats.get(f'{unit_name}.busy_cycles', 0)}"
+            )
+        return
     raise ValueError(f"Unsupported report {report_name!r}.")
 
 
@@ -105,7 +123,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report",
         action="append",
-        choices=("latency", "occupancy", "memory", "contention"),
+        choices=("latency", "occupancy", "memory", "contention", "units"),
         default=[],
         help="Print a curated report for one stats family. May be repeated.",
     )

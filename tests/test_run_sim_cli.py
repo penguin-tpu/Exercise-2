@@ -71,7 +71,7 @@ class TestRunSimCLI:
         assert "trace cycle=" in result.stdout
 
     def test_run_sim_reports_curated_latency_and_occupancy_views(self) -> None:
-        """The CLI should print curated latency and occupancy reports on request."""
+        """The CLI should print curated latency, occupancy, and unit reports on request."""
         repo_root = Path(__file__).resolve().parent.parent
         script = repo_root / "scripts" / "run_sim.py"
         result = subprocess.run(
@@ -82,6 +82,8 @@ class TestRunSimCLI:
                 "latency",
                 "--report",
                 "occupancy",
+                "--report",
+                "units",
             ],
             check=True,
             text=True,
@@ -92,9 +94,10 @@ class TestRunSimCLI:
         assert "report latency opcode=addi" in result.stdout
         assert "avg_cycles=1.00" in result.stdout
         assert "report occupancy unit=scalar depth=1" in result.stdout
+        assert "report units unit=scalar" in result.stdout
 
     def test_emit_report_prints_memory_and_contention_views(self, capsys: object) -> None:
-        """The report helper should print curated memory and contention views from flat stats."""
+        """The report helper should print curated memory, contention, and unit views from flat stats."""
         stats = {
             "dram.bytes_read": 32,
             "scratchpad.bytes_written": 16,
@@ -102,13 +105,17 @@ class TestRunSimCLI:
             "memory.contention.resource.mem_dram": 2,
             "scratchpad.bank_conflict.sp_bank_0": 1,
             "scratchpad.port_conflict.sp_read_port_0": 3,
+            "scalar.issued_ops": 4,
+            "scalar.busy_cycles": 4,
         }
 
         emit_report("memory", stats)
         emit_report("contention", stats)
+        emit_report("units", stats)
         captured = capsys.readouterr()
 
         assert "report memory key=dram.bytes_read value=32" in captured.out
         assert "report memory key=scratchpad.bytes_written value=16" in captured.out
         assert "report contention key=dram.contention_stalls value=2" in captured.out
         assert "report contention key=scratchpad.bank_conflict.sp_bank_0 value=1" in captured.out
+        assert "report units unit=scalar issued_ops=4 busy_cycles=4" in captured.out
