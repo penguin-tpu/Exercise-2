@@ -69,6 +69,8 @@ class TorchTensorBackend:
         """Execute a supported reduction using Torch."""
         if op_name == "sum":
             result = value.reshape(-1).sum()
+        elif op_name == "max":
+            result = value.reshape(-1).max()
         else:
             raise NotImplementedError(f"Unsupported Torch backend reduction: {op_name}")
         return result.reshape(1).to(dtype=self._resolve_dtype(out_dtype))

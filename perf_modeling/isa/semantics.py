@@ -1008,14 +1008,17 @@ def _plan_vrelu(
     )
 
 
-def _plan_vreduce_sum(
+def _plan_vector_reduce(
     instruction: Instruction,
     cycle: int,
     state: "ArchState",
     config: "AcceleratorConfig",
     _scoreboard: "Scoreboard",
     backend: "TensorBackend | None",
+    backend_op_name: str,
+    opcode_label: str,
 ) -> ExecutionPlan:
+    """Plan one scalarizing vector reduction."""
     pc = _load_field(instruction, "pc")
     source_index = instruction.source_tensors()[0]
     dest_index = instruction.dest_tensors()[0]
@@ -1027,7 +1030,7 @@ def _plan_vreduce_sum(
             cause=CAUSE_ILLEGAL_INSTRUCTION,
             pc=pc,
             tval=0,
-            reason=f"Vector reduce-sum expects a scalar output shape at 0x{pc:08x}, got {output_shape}.",
+            reason=f"Vector {opcode_label} expects a scalar output shape at 0x{pc:08x}, got {output_shape}.",
         )
     elements = _tensor_num_elements(source.descriptor.shape)
     completion_cycle = cycle + vector_latency(config.core.vector, elements)
@@ -1035,7 +1038,7 @@ def _plan_vreduce_sum(
     def on_complete() -> None:
         if backend is None:
             raise ValueError("Tensor backend is required for vector instructions.")
-        payload = backend.reduce("sum", source.payload, out_dtype).reshape(output_shape)
+        payload = backend.reduce(backend_op_name, source.payload, out_dtype).reshape(output_shape)
         _write_tensor_register(state, dest_index, output_shape, out_dtype, payload)
 
     return ExecutionPlan(
@@ -1048,7 +1051,47 @@ def _plan_vreduce_sum(
             )
         ],
         on_complete=on_complete,
-        description=f"vreduce_sum @ 0x{pc:08x}",
+        description=f"{opcode_label} @ 0x{pc:08x}",
+    )
+
+
+def _plan_vreduce_sum(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    scoreboard: "Scoreboard",
+    backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    return _plan_vector_reduce(
+        instruction,
+        cycle,
+        state,
+        config,
+        scoreboard,
+        backend,
+        backend_op_name="sum",
+        opcode_label="vreduce_sum",
+    )
+
+
+def _plan_vreduce_max(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    scoreboard: "Scoreboard",
+    backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    return _plan_vector_reduce(
+        instruction,
+        cycle,
+        state,
+        config,
+        scoreboard,
+        backend,
+        backend_op_name="max",
+        opcode_label="vreduce_max",
     )
 
 
@@ -1265,6 +1308,7 @@ def build_rv32i_semantics_registry() -> SemanticsRegistry:
     registry.register("vmax", _plan_vmax)
     registry.register("vrelu", _plan_vrelu)
     registry.register("vreduce_sum", _plan_vreduce_sum)
+    registry.register("vreduce_max", _plan_vreduce_max)
     registry.register("matmul", _plan_matmul)
     registry.register("fence", _plan_fence)
     for opcode in ("csrrw", "csrrs", "csrrc", "csrrwi", "csrrsi", "csrrci"):

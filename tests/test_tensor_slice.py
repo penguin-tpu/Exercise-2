@@ -249,3 +249,47 @@ class TestTensorSlice:
         assert unpack_float32(engine.state.scratchpad.read(0, 4)) == (2.5,)
         assert stats["vector.issued_ops"] == 2
         assert stats["load_store.issued_ops"] >= 3
+
+    def test_tensor_vertical_slice_executes_vector_reduce_max(self) -> None:
+        """Tensor reduce-max should execute through the engine for int32 payloads."""
+        scratchpad_base = self.make_config().machine.scratchpad_base_address
+        program = (
+            ProgramBuilder(base_address=0x1000)
+            .emit_tensor_load(dest_tensor=0, address=0x200, shape=(4,), dtype="int32")
+            .emit_vector_reduce_max(dest_tensor=1, source_tensor=0, out_dtype="int32")
+            .emit_tensor_store(source_tensor=1, address=scratchpad_base)
+            .emit("ebreak")
+            .build(name="tensor-reduce-max-vertical-slice")
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x200, pack_int32([-3, 7, 5, -1]))
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert tuple(engine.state.tensor_regs.read(1).payload.reshape(-1).tolist()) == (7,)
+        assert unpack_int32(engine.state.scratchpad.read(0, 4)) == (7,)
+        assert stats["vector.issued_ops"] == 1
+        assert stats["load_store.issued_ops"] >= 2
+
+    def test_tensor_vertical_slice_executes_float32_vector_reduce_max(self) -> None:
+        """Tensor reduce-max should also support float32 payloads."""
+        scratchpad_base = self.make_config().machine.scratchpad_base_address
+        program = (
+            ProgramBuilder(base_address=0x1000)
+            .emit_tensor_load(dest_tensor=0, address=0x200, shape=(4,), dtype="float32")
+            .emit_vector_reduce_max(dest_tensor=1, source_tensor=0, out_dtype="float32")
+            .emit_tensor_store(source_tensor=1, address=scratchpad_base)
+            .emit("ebreak")
+            .build(name="tensor-float32-reduce-max-vertical-slice")
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x200, pack_float32([-1.5, 0.5, 2.5, -0.25]))
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert tuple(engine.state.tensor_regs.read(1).payload.reshape(-1).tolist()) == (2.5,)
+        assert unpack_float32(engine.state.scratchpad.read(0, 4)) == (2.5,)
+        assert stats["vector.issued_ops"] == 1
+        assert stats["load_store.issued_ops"] >= 2

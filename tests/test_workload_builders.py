@@ -289,6 +289,52 @@ class TestWorkloadBuilders:
         assert stats["vector.issued_ops"] == 1
         assert stats["stall_fence"] >= 1
 
+    def test_vector_reduce_max_smoke_builder_executes_end_to_end(self) -> None:
+        """The vector reduce-max builder should emit a runnable tensor microbenchmark."""
+        problem = KernelProblem(
+            name="vector-reduce-max",
+            input_shapes=((4,),),
+            output_shape=(1,),
+        )
+        program = ProgramBuilder(base_address=0x1000).build_vector_reduce_max_smoke_test(
+            problem=problem,
+            input_address=0x200,
+            output_address=0x240,
+            dtype="int32",
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x200, pack_int32([-3, 7, 5, -1]))
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert unpack_int32(engine.state.dram.read(0x240, 4)) == (7,)
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_vector_reduce_max_smoke_builder_executes_float32_end_to_end(self) -> None:
+        """The vector reduce-max builder should support float32 tensor payloads."""
+        problem = KernelProblem(
+            name="vector-reduce-max-float32",
+            input_shapes=((4,),),
+            output_shape=(1,),
+        )
+        program = ProgramBuilder(base_address=0x1000).build_vector_reduce_max_smoke_test(
+            problem=problem,
+            input_address=0x200,
+            output_address=0x240,
+            dtype="float32",
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x200, pack_float32([-1.5, 0.5, 2.5, -0.25]))
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert unpack_float32(engine.state.dram.read(0x240, 4)) == (2.5,)
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
     def test_matmul_smoke_builder_executes_end_to_end(self) -> None:
         """The matmul builder should emit a runnable tensor microbenchmark."""
         problem = KernelProblem(
@@ -609,6 +655,58 @@ class TestWorkloadBuilders:
 
         assert engine.state.halted
         assert unpack_float32(engine.state.dram.read(0x240, 4)) == (4.0,)
+        assert stats["dma.issued_ops"] == 2
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_staged_vector_reduce_max_smoke_builder_executes_end_to_end(self) -> None:
+        """The staged vector reduce-max builder should DMA through scratchpad before compute."""
+        problem = KernelProblem(
+            name="staged-vector-reduce-max",
+            input_shapes=((4,),),
+            output_shape=(1,),
+        )
+        config = self.make_config()
+        program = ProgramBuilder(base_address=0x1000).build_staged_vector_reduce_max_smoke_test(
+            problem=problem,
+            input_address=0x200,
+            output_address=0x240,
+            dtype="int32",
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+        engine = SimulatorEngine(config=config, program=program)
+        engine.state.dram.write(0x200, pack_int32([-3, 7, 5, -1]))
+
+        stats = engine.run(max_cycles=400).snapshot()
+
+        assert engine.state.halted
+        assert unpack_int32(engine.state.dram.read(0x240, 4)) == (7,)
+        assert stats["dma.issued_ops"] == 2
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_staged_vector_reduce_max_smoke_builder_executes_float32_end_to_end(self) -> None:
+        """The staged vector reduce-max builder should support float32 tensor payloads."""
+        problem = KernelProblem(
+            name="staged-vector-reduce-max-float32",
+            input_shapes=((4,),),
+            output_shape=(1,),
+        )
+        config = self.make_config()
+        program = ProgramBuilder(base_address=0x1000).build_staged_vector_reduce_max_smoke_test(
+            problem=problem,
+            input_address=0x200,
+            output_address=0x240,
+            dtype="float32",
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+        engine = SimulatorEngine(config=config, program=program)
+        engine.state.dram.write(0x200, pack_float32([-1.5, 0.5, 2.5, -0.25]))
+
+        stats = engine.run(max_cycles=400).snapshot()
+
+        assert engine.state.halted
+        assert unpack_float32(engine.state.dram.read(0x240, 4)) == (2.5,)
         assert stats["dma.issued_ops"] == 2
         assert stats["vector.issued_ops"] == 1
         assert stats["stall_fence"] >= 1

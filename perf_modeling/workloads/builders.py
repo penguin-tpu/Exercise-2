@@ -180,6 +180,24 @@ class ProgramBuilder:
             },
         )
 
+    def emit_vector_reduce_max(
+        self,
+        dest_tensor: int,
+        source_tensor: int,
+        out_dtype: str,
+        output_shape: tuple[int, ...] = (1,),
+    ) -> "ProgramBuilder":
+        """Append a vector reduce-max over one tensor register."""
+        return self.emit(
+            "vreduce_max",
+            metadata={
+                "source_tensors": (source_tensor,),
+                "dest_tensors": (dest_tensor,),
+                "out_dtype": out_dtype,
+                "output_shape": output_shape,
+            },
+        )
+
     def emit_matmul(
         self,
         dest_tensor: int,
@@ -361,6 +379,28 @@ class ProgramBuilder:
             .emit("fence")
             .emit("ebreak")
             .build(name=f"{problem.name}-vector-reduce-sum-smoke")
+        )
+
+    def build_vector_reduce_max_smoke_test(
+        self,
+        problem: KernelProblem,
+        input_address: int,
+        output_address: int,
+        dtype: str,
+    ) -> Program:
+        """Construct a tensor-load, vector-reduce-max, tensor-store microbenchmark program."""
+        if len(problem.input_shapes) != 1:
+            raise ValueError("Vector reduce-max smoke tests expect exactly one input tensor.")
+        if problem.output_shape != (1,):
+            raise ValueError("Vector reduce-max smoke-test output shape must be (1,).")
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_tensor_load(dest_tensor=0, address=input_address, shape=problem.input_shapes[0], dtype=dtype)
+            .emit_vector_reduce_max(dest_tensor=1, source_tensor=0, out_dtype=dtype, output_shape=problem.output_shape)
+            .emit_tensor_store(source_tensor=1, address=output_address)
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-vector-reduce-max-smoke")
         )
 
     def build_staged_vector_add_smoke_test(
@@ -582,6 +622,45 @@ class ProgramBuilder:
             .emit("fence")
             .emit("ebreak")
             .build(name=f"{problem.name}-vector-reduce-sum-staged-smoke")
+        )
+
+    def build_staged_vector_reduce_max_smoke_test(
+        self,
+        problem: KernelProblem,
+        input_address: int,
+        output_address: int,
+        dtype: str,
+        scratchpad_base_address: int,
+    ) -> Program:
+        """Construct a DMA-to-scratchpad vector reduce-max smoke test."""
+        if len(problem.input_shapes) != 1:
+            raise ValueError("Vector reduce-max smoke tests expect exactly one input tensor.")
+        if problem.output_shape != (1,):
+            raise ValueError("Vector reduce-max smoke-test output shape must be (1,).")
+        input_bytes = _tensor_payload_bytes(problem.input_shapes[0], dtype)
+        output_bytes = _tensor_payload_bytes(problem.output_shape, dtype)
+        input_scratch_address = scratchpad_base_address
+        output_scratch_address = input_scratch_address + input_bytes
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_dma_copy(
+                source_address=input_address,
+                dest_address=input_scratch_address,
+                num_bytes=input_bytes,
+            )
+            .emit("fence")
+            .emit_tensor_load(dest_tensor=0, address=input_scratch_address, shape=problem.input_shapes[0], dtype=dtype)
+            .emit_vector_reduce_max(dest_tensor=1, source_tensor=0, out_dtype=dtype, output_shape=problem.output_shape)
+            .emit_tensor_store(source_tensor=1, address=output_scratch_address)
+            .emit("fence")
+            .emit_dma_copy(
+                source_address=output_scratch_address,
+                dest_address=output_address,
+                num_bytes=output_bytes,
+            )
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-vector-reduce-max-staged-smoke")
         )
 
     def build_matmul_smoke_test(
