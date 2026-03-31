@@ -7,6 +7,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from scripts.run_sim import emit_report
+
 
 class TestRunSimCLI:
     """Verify structured CLI exports from the simulator entrypoint."""
@@ -90,3 +92,23 @@ class TestRunSimCLI:
         assert "report latency opcode=addi" in result.stdout
         assert "avg_cycles=1.00" in result.stdout
         assert "report occupancy unit=scalar depth=1" in result.stdout
+
+    def test_emit_report_prints_memory_and_contention_views(self, capsys: object) -> None:
+        """The report helper should print curated memory and contention views from flat stats."""
+        stats = {
+            "dram.bytes_read": 32,
+            "scratchpad.bytes_written": 16,
+            "dram.contention_stalls": 2,
+            "memory.contention.resource.mem_dram": 2,
+            "scratchpad.bank_conflict.sp_bank_0": 1,
+            "scratchpad.port_conflict.sp_read_port_0": 3,
+        }
+
+        emit_report("memory", stats)
+        emit_report("contention", stats)
+        captured = capsys.readouterr()
+
+        assert "report memory key=dram.bytes_read value=32" in captured.out
+        assert "report memory key=scratchpad.bytes_written value=16" in captured.out
+        assert "report contention key=dram.contention_stalls value=2" in captured.out
+        assert "report contention key=scratchpad.bank_conflict.sp_bank_0 value=1" in captured.out

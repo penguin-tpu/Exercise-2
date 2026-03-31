@@ -41,6 +41,24 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
             unit_name, _, depth = key.partition(".queue_occupancy.")
             print(f"report occupancy unit={unit_name} depth={depth} samples={stats[key]}")
         return
+    if report_name == "memory":
+        memory_keys = sorted(
+            key
+            for key in stats
+            if key.endswith(".bytes_read") or key.endswith(".bytes_written")
+        )
+        for key in memory_keys:
+            print(f"report memory key={key} value={stats[key]}")
+        return
+    if report_name == "contention":
+        contention_keys = sorted(
+            key
+            for key in stats
+            if "contention" in key or "bank_conflict" in key or "port_conflict" in key
+        )
+        for key in contention_keys:
+            print(f"report contention key={key} value={stats[key]}")
+        return
     raise ValueError(f"Unsupported report {report_name!r}.")
 
 
@@ -87,7 +105,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report",
         action="append",
-        choices=("latency", "occupancy"),
+        choices=("latency", "occupancy", "memory", "contention"),
         default=[],
         help="Print a curated report for one stats family. May be repeated.",
     )
