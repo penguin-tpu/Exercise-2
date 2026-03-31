@@ -256,6 +256,57 @@ class TestRunSimCLI:
         assert "program=dram_load.S" in result.stdout
         assert payload == b"\x78\x56\x34\x12"
 
+    def test_run_sim_preloads_scratchpad_from_image_file(self) -> None:
+        """The CLI should preload scratchpad bytes before execution via `--scratchpad-load`."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            image_path = temp_path / "input.bin"
+            source = temp_path / "scratchpad_load.S"
+            dump_path = temp_path / "out" / "roundtrip.bin"
+            image_path.write_bytes(b"\xef\xbe\xad\xde")
+            source.write_text(
+                "\n".join(
+                    [
+                        ".section .text",
+                        ".globl _start",
+                        "_start:",
+                        "  lui t0, 0x20000",
+                        "  lw a0, 0(t0)",
+                        "  addi t1, x0, 128",
+                        "  sw a0, 0(t1)",
+                        "  ebreak",
+                        "",
+                    ]
+                )
+            )
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    str(source),
+                    "--scratchpad-load",
+                    f"0x0:{image_path}",
+                    "--dram-dump",
+                    str(dump_path),
+                    "--dram-dump-offset",
+                    "128",
+                    "--dram-dump-size",
+                    "4",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            payload = dump_path.read_bytes()
+
+        assert "program=scratchpad_load.S" in result.stdout
+        assert payload == b"\xef\xbe\xad\xde"
+
     def test_run_sim_accepts_assembly_input_directly(self) -> None:
         """The CLI should assemble one source file transiently when passed assembly input."""
         repo_root = Path(__file__).resolve().parent.parent

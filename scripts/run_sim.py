@@ -400,6 +400,13 @@ def parse_args() -> argparse.Namespace:
         help="Repeatable DRAM preload in the form ADDRESS:PATH.",
     )
     parser.add_argument(
+        "--scratchpad-load",
+        action="append",
+        type=_parse_image_load_spec,
+        default=[],
+        help="Repeatable scratchpad preload in the form OFFSET:PATH.",
+    )
+    parser.add_argument(
         "--stats-json",
         type=str,
         default=None,
@@ -526,6 +533,8 @@ def main() -> None:
     engine = SimulatorEngine(config=AcceleratorConfig(), program=program)
     for address, path in args.dram_load:
         engine.state.dram.load_image(address, path.read_bytes())
+    for offset, path in args.scratchpad_load:
+        engine.state.scratchpad.load_image(offset, path.read_bytes())
     stats = engine.run(max_cycles=args.max_cycles).snapshot()
     artifact_outputs: dict[str, str] = {}
     print(f"program={program.name}")
