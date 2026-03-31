@@ -71,6 +71,7 @@ Useful common options:
 - `--sweep-limit 3`
 - `--sweep-manifest-json sweep.json`
 - `--sweep-report summary --sweep-report delta`
+- `--experiment-json experiment.json`
 - `--output-dir out`
 - `--stats-json stats.json`
 - `--trace-json trace.json`
@@ -130,6 +131,22 @@ You can also package a grouped sweep experiment into one manifest:
 uv run python scripts/run_sim.py \
   --sweep-manifest-json sweep.json \
   --sweep-json sweep-results.json
+```
+
+The same grouped manifest style can drive a single run too:
+
+```json
+{
+  "program": "tests/workload/scalar_int_matmul.S",
+  "config": "tiny_debug",
+  "max_cycles": 100000
+}
+```
+
+```bash
+uv run python scripts/run_sim.py \
+  --experiment-json experiment.json \
+  --stats-json stats.json
 ```
 
 ## Reports

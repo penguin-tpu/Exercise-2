@@ -811,6 +811,59 @@ class TestRunSimCLI:
         assert sweep_payload["limit"] == 1
         assert [entry["config"] for entry in sweep_payload["results"]] == ["tiny_debug"]
 
+    def test_run_sim_loads_grouped_single_run_manifest(self) -> None:
+        """The CLI should accept one grouped single-run manifest with a relative program path."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "manifest_single.S"
+            manifest_path = temp_path / "experiment.json"
+            stats_path = temp_path / "out" / "stats.json"
+            source.write_text(
+                "\n".join(
+                    [
+                        ".section .text",
+                        ".globl _start",
+                        "_start:",
+                        "  addi a0, x0, 7",
+                        "  ebreak",
+                        "",
+                    ]
+                )
+            )
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "program": source.name,
+                        "config": "tiny_debug",
+                        "max_cycles": 1000,
+                    }
+                )
+            )
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    "--experiment-json",
+                    str(manifest_path),
+                    "--stats-json",
+                    str(stats_path),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            stats_payload = json.loads(stats_path.read_text())
+
+        assert "program=manifest_single.S" in result.stdout
+        assert stats_payload["program"] == "manifest_single.S"
+        assert stats_payload["config"] == "tiny_debug"
+        assert stats_payload["stats"]["cycles"] > 3
+
     def test_run_sim_prints_comparative_sweep_reports(self) -> None:
         """The CLI should print comparative sweep summary and delta reports."""
         repo_root = Path(__file__).resolve().parent.parent

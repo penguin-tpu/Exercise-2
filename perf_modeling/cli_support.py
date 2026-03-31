@@ -18,15 +18,17 @@ ASSEMBLY_SUFFIXES = frozenset({".s", ".asm"})
 
 
 @dataclass(frozen=True)
-class SweepExperimentManifest:
-    """Resolved contents of one sweep experiment manifest."""
+class ExperimentManifest:
+    """Resolved contents of one grouped experiment manifest."""
 
     program: Path | None
-    """Optional program path used for the sweep."""
+    """Optional program path used for the experiment."""
     base_address: int | None
     """Optional raw-binary base address override."""
     max_cycles: int | None
     """Optional cycle limit override."""
+    config: str | None
+    """Optional single-run named config."""
     sweep_configs: tuple[str, ...]
     """Ordered named configs included in the sweep."""
     sweep_sort: str | None
@@ -85,11 +87,11 @@ def load_memory_manifest(manifest_path: Path) -> tuple[list[tuple[int, Path]], l
     return dram_loads, scratchpad_loads
 
 
-def load_sweep_experiment_manifest(manifest_path: Path) -> SweepExperimentManifest:
-    """Load one sweep experiment manifest with program, configs, ordering, and preloads."""
+def load_experiment_manifest(manifest_path: Path) -> ExperimentManifest:
+    """Load one grouped experiment manifest with program, configs, ordering, and preloads."""
     payload = json.loads(manifest_path.read_text())
     if not isinstance(payload, dict):
-        raise ValueError("Sweep experiment manifest must contain a top-level JSON object.")
+        raise ValueError("Experiment manifest must contain a top-level JSON object.")
     manifest_root = manifest_path.parent
     program = payload.get("program")
     program_path: Path | None = None
@@ -101,6 +103,9 @@ def load_sweep_experiment_manifest(manifest_path: Path) -> SweepExperimentManife
     if not isinstance(sweep_configs_value, list):
         raise ValueError("sweep_configs must be a JSON array when present.")
     sweep_configs = tuple(str(config_name) for config_name in sweep_configs_value)
+    config = None
+    if "config" in payload:
+        config = str(payload["config"])
     base_address = None
     if "base_address" in payload:
         base_address = parse_int_like(payload["base_address"], "base_address")
@@ -119,7 +124,7 @@ def load_sweep_experiment_manifest(manifest_path: Path) -> SweepExperimentManife
     dram_loads: list[tuple[int, Path]] = []
     for entry in payload.get("dram", []):
         if not isinstance(entry, dict):
-            raise ValueError("Each DRAM sweep manifest entry must be a JSON object.")
+            raise ValueError("Each DRAM experiment manifest entry must be a JSON object.")
         address = parse_int_like(entry.get("address"), "dram.address")
         path = Path(entry.get("path"))
         if not path.is_absolute():
@@ -128,16 +133,17 @@ def load_sweep_experiment_manifest(manifest_path: Path) -> SweepExperimentManife
     scratchpad_loads: list[tuple[int, Path]] = []
     for entry in payload.get("scratchpad", []):
         if not isinstance(entry, dict):
-            raise ValueError("Each scratchpad sweep manifest entry must be a JSON object.")
+            raise ValueError("Each scratchpad experiment manifest entry must be a JSON object.")
         offset = parse_int_like(entry.get("offset"), "scratchpad.offset")
         path = Path(entry.get("path"))
         if not path.is_absolute():
             path = manifest_root / path
         scratchpad_loads.append((offset, path))
-    return SweepExperimentManifest(
+    return ExperimentManifest(
         program=program_path,
         base_address=base_address,
         max_cycles=max_cycles,
+        config=config,
         sweep_configs=sweep_configs,
         sweep_sort=sweep_sort,
         sweep_desc=sweep_desc,
@@ -145,6 +151,11 @@ def load_sweep_experiment_manifest(manifest_path: Path) -> SweepExperimentManife
         dram_loads=tuple(dram_loads),
         scratchpad_loads=tuple(scratchpad_loads),
     )
+
+
+def load_sweep_experiment_manifest(manifest_path: Path) -> ExperimentManifest:
+    """Backward-compatible wrapper for the older sweep-manifest-only loader name."""
+    return load_experiment_manifest(manifest_path)
 
 
 def path_is_under_directory(path: Path, directory: Path) -> bool:

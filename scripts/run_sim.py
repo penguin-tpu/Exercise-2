@@ -15,8 +15,8 @@ if str(REPO_ROOT) not in sys.path:
 from perf_modeling import AcceleratorConfig, SimulatorEngine
 from perf_modeling.cli_support import (
     decode_program_from_path,
+    load_experiment_manifest,
     load_memory_manifest,
-    load_sweep_experiment_manifest,
     parse_image_load_spec,
     prepare_output_path,
 )
@@ -112,6 +112,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Optional JSON manifest describing a grouped sweep experiment.",
+    )
+    parser.add_argument(
+        "--experiment-json",
+        type=Path,
+        default=None,
+        help="Optional JSON manifest describing a grouped single-run or sweep experiment.",
     )
     parser.add_argument(
         "--sweep-report",
@@ -307,30 +313,43 @@ def main() -> None:
         for config_name in available_config_names():
             print(f"config name={config_name} description={describe_named_config(config_name)}")
         return
-    sweep_manifest = None
-    if args.sweep_manifest_json is not None:
-        sweep_manifest = load_sweep_experiment_manifest(args.sweep_manifest_json)
+    if args.experiment_json is not None and args.sweep_manifest_json is not None:
+        parser.error("Use either --experiment-json or --sweep-manifest-json, not both.")
+    experiment_manifest = None
+    manifest_path = args.experiment_json
+    if manifest_path is None:
+        manifest_path = args.sweep_manifest_json
+    if manifest_path is not None:
+        experiment_manifest = load_experiment_manifest(manifest_path)
     effective_program_path = args.program
-    if effective_program_path is None and sweep_manifest is not None:
-        effective_program_path = sweep_manifest.program
+    if effective_program_path is None and experiment_manifest is not None:
+        effective_program_path = experiment_manifest.program
     effective_base_address = args.base_address
-    if effective_base_address == 0x1000 and sweep_manifest is not None and sweep_manifest.base_address is not None:
-        effective_base_address = sweep_manifest.base_address
+    if effective_base_address == 0x1000 and experiment_manifest is not None and experiment_manifest.base_address is not None:
+        effective_base_address = experiment_manifest.base_address
     effective_max_cycles = args.max_cycles
-    if effective_max_cycles == 100000 and sweep_manifest is not None and sweep_manifest.max_cycles is not None:
-        effective_max_cycles = sweep_manifest.max_cycles
+    if effective_max_cycles == 100000 and experiment_manifest is not None and experiment_manifest.max_cycles is not None:
+        effective_max_cycles = experiment_manifest.max_cycles
     effective_sweep_configs = list(args.sweep_config)
-    if not effective_sweep_configs and sweep_manifest is not None:
-        effective_sweep_configs = list(sweep_manifest.sweep_configs)
+    if not effective_sweep_configs and experiment_manifest is not None:
+        effective_sweep_configs = list(experiment_manifest.sweep_configs)
     effective_sweep_sort = args.sweep_sort
-    if effective_sweep_sort == "config" and sweep_manifest is not None and sweep_manifest.sweep_sort is not None:
-        effective_sweep_sort = sweep_manifest.sweep_sort
+    if effective_sweep_sort == "config" and experiment_manifest is not None and experiment_manifest.sweep_sort is not None:
+        effective_sweep_sort = experiment_manifest.sweep_sort
     effective_sweep_desc = args.sweep_desc
-    if not effective_sweep_desc and sweep_manifest is not None and sweep_manifest.sweep_desc is not None:
-        effective_sweep_desc = sweep_manifest.sweep_desc
+    if not effective_sweep_desc and experiment_manifest is not None and experiment_manifest.sweep_desc is not None:
+        effective_sweep_desc = experiment_manifest.sweep_desc
     effective_sweep_limit = args.sweep_limit
-    if effective_sweep_limit == 0 and sweep_manifest is not None and sweep_manifest.sweep_limit is not None:
-        effective_sweep_limit = sweep_manifest.sweep_limit
+    if effective_sweep_limit == 0 and experiment_manifest is not None and experiment_manifest.sweep_limit is not None:
+        effective_sweep_limit = experiment_manifest.sweep_limit
+    effective_config_name = args.config
+    if (
+        effective_config_name == "baseline"
+        and not effective_sweep_configs
+        and experiment_manifest is not None
+        and experiment_manifest.config is not None
+    ):
+        effective_config_name = experiment_manifest.config
     validate_args(args, parser, effective_sweep_configs, effective_sweep_limit)
     decoder = Decoder()
     if effective_program_path is None:
@@ -342,8 +361,8 @@ def main() -> None:
     manifest_scratchpad_loads: list[tuple[int, Path]] = []
     if args.memory_loads_json is not None:
         manifest_dram_loads, manifest_scratchpad_loads = load_memory_manifest(args.memory_loads_json)
-    sweep_manifest_dram_loads = list(sweep_manifest.dram_loads) if sweep_manifest is not None else []
-    sweep_manifest_scratchpad_loads = list(sweep_manifest.scratchpad_loads) if sweep_manifest is not None else []
+    sweep_manifest_dram_loads = list(experiment_manifest.dram_loads) if experiment_manifest is not None else []
+    sweep_manifest_scratchpad_loads = list(experiment_manifest.scratchpad_loads) if experiment_manifest is not None else []
     dram_images = [(address, path.read_bytes()) for address, path in sweep_manifest_dram_loads]
     dram_images.extend((address, path.read_bytes()) for address, path in manifest_dram_loads)
     dram_images.extend((address, path.read_bytes()) for address, path in args.dram_load)
@@ -423,7 +442,7 @@ def main() -> None:
                     writer = csv.writer(handle)
                     writer.writerows(rows)
         return
-    engine = SimulatorEngine(config=get_named_config(args.config), program=program)
+    engine = SimulatorEngine(config=get_named_config(effective_config_name), program=program)
     config_snapshot = snapshot_config(engine.config)
     for address, payload in dram_images:
         engine.state.dram.load_image(address, payload)
@@ -461,7 +480,7 @@ def main() -> None:
     if args.stats_json is not None:
         stats_payload = {
             "program": program.name,
-            "config": args.config,
+            "config": effective_config_name,
             "config_snapshot": config_snapshot,
             "halted": engine.state.halted,
             "exit_code": engine.state.exit_code,
@@ -545,7 +564,7 @@ def main() -> None:
             manifest_destination = str(prepare_output_path(args.manifest_json, args.output_dir).resolve())
         manifest_payload = {
             "program": program.name,
-            "config": args.config,
+            "config": effective_config_name,
             "config_snapshot": config_snapshot,
             "halted": engine.state.halted,
             "exit_code": engine.state.exit_code,
