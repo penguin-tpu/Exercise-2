@@ -178,6 +178,9 @@ def build_run_summary(stats: dict[str, int]) -> dict[str, object]:
     latency_samples = stats.get(f"latency.{top_opcode}.samples", 0) if top_opcode != "none" else 0
     latency_total_cycles = stats.get(f"latency.{top_opcode}.total_cycles", 0) if top_opcode != "none" else 0
     latency_max_cycles = stats.get(f"latency.{top_opcode}.max_cycles", 0) if top_opcode != "none" else 0
+    event_keys = sorted(key for key in stats if key.startswith("event_queue.pending."))
+    event_samples = sum(stats[key] for key in event_keys)
+    event_weighted_depth = sum(int(key.removeprefix("event_queue.pending.")) * stats[key] for key in event_keys)
 
     return {
         "pipeline": {
@@ -204,6 +207,11 @@ def build_run_summary(stats: dict[str, int]) -> dict[str, object]:
         "contention_hotspot": {
             "key": top_contention_key,
             "value": max(top_contention_value, 0),
+        },
+        "event_queue": {
+            "samples": event_samples,
+            "avg_pending": _format_average(event_weighted_depth, event_samples),
+            "max_pending": stats.get("event_queue.max_pending", 0),
         },
     }
 
@@ -237,6 +245,7 @@ def emit_report(
         latency_hotspot = summary["latency_hotspot"]
         memory_hotspot = summary["memory_hotspot"]
         contention_hotspot = summary["contention_hotspot"]
+        event_queue = summary["event_queue"]
         print(
             f"report summary pipeline cycles={pipeline['cycles']} issued={pipeline['issued']} retired={pipeline['retired']} total_stalls={pipeline['total_stalls']}"
         )
@@ -251,6 +260,9 @@ def emit_report(
         )
         print(
             f"report summary contention key={contention_hotspot['key']} value={contention_hotspot['value']}"
+        )
+        print(
+            f"report summary events samples={event_queue['samples']} avg_pending={event_queue['avg_pending']} max_pending={event_queue['max_pending']}"
         )
         return
     if report_name == "latency":

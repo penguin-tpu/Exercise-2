@@ -547,6 +547,7 @@ class TestRunSimCLI:
         assert manifest_payload["summary"]["pipeline"]["retired"] > 0
         assert manifest_payload["summary"]["busiest_unit"]["name"] != ""
         assert manifest_payload["summary"]["latency_hotspot"]["opcode"] != ""
+        assert "max_pending" in manifest_payload["summary"]["event_queue"]
         assert manifest_payload["artifacts"]["stats_json"] == str((output_dir / "stats.json").resolve())
         assert manifest_payload["artifacts"]["trace_json"] == str((output_dir / "trace.json").resolve())
         assert manifest_payload["artifacts"]["scratchpad_dump"] == str((output_dir / "results.bin").resolve())
@@ -618,6 +619,7 @@ class TestRunSimCLI:
         assert "report summary latency opcode=addi avg_cycles=1.00 max_cycles=1" in result.stdout
         assert "report summary memory key=none total_bytes=0" in result.stdout
         assert "report summary contention key=none value=0" in result.stdout
+        assert "report summary events samples=3 avg_pending=0.67 max_pending=1" in result.stdout
         assert "report latency opcode=addi" in result.stdout
         assert "avg_cycles=1.00" in result.stdout
         assert "report occupancy_summary unit=scalar samples=3 avg_depth=0.67 max_depth=1" in result.stdout
@@ -798,6 +800,9 @@ class TestRunSimCLI:
             "scratchpad.bytes_written": 32,
             "memory.contention.resource.mem_dram": 2,
             "scratchpad.port_conflict.sp_read_port_0": 3,
+            "event_queue.pending.0": 1,
+            "event_queue.pending.2": 3,
+            "event_queue.max_pending": 2,
             "stall_fence": 1,
         }
 
@@ -809,6 +814,7 @@ class TestRunSimCLI:
         assert "report summary latency opcode=dma_copy avg_cycles=4.00 max_cycles=5" in captured.out
         assert "report summary memory key=dram.bytes_read total_bytes=64" in captured.out
         assert "report summary contention key=scratchpad.port_conflict.sp_read_port_0 value=3" in captured.out
+        assert "report summary events samples=4 avg_pending=1.50 max_pending=2" in captured.out
 
     def test_emit_report_respects_report_limit(self, capsys: object) -> None:
         """Multi-row reports should honor the optional report-limit argument."""
