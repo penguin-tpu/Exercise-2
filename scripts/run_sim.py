@@ -510,7 +510,7 @@ def main() -> None:
     for report_name in args.report:
         if report_name == "config":
             emit_config_report(
-                args.config,
+                effective_config_name,
                 config_snapshot,
                 report_limit=args.report_limit if args.report_limit > 0 else None,
                 report_match=args.report_match,
