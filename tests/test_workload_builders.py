@@ -177,6 +177,34 @@ class TestWorkloadBuilders:
         assert stats["vector.issued_ops"] == 1
         assert stats["stall_fence"] >= 1
 
+    def test_staged_vector_add_smoke_builder_executes_float32_end_to_end(self) -> None:
+        """The staged vector-add builder should support float32 tensor payloads."""
+        problem = KernelProblem(
+            name="staged-vector-add-float32",
+            input_shapes=((2, 2), (2, 2)),
+            output_shape=(2, 2),
+        )
+        config = self.make_config()
+        program = ProgramBuilder(base_address=0x1000).build_staged_vector_add_smoke_test(
+            problem=problem,
+            lhs_address=0x200,
+            rhs_address=0x240,
+            output_address=0x280,
+            dtype="float32",
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+        engine = SimulatorEngine(config=config, program=program)
+        engine.state.dram.write(0x200, pack_float32([0.5, 1.0, 1.5, 2.0]))
+        engine.state.dram.write(0x240, pack_float32([2.0, 0.5, 1.0, 1.5]))
+
+        stats = engine.run(max_cycles=400).snapshot()
+
+        assert engine.state.halted
+        assert unpack_float32(engine.state.dram.read(0x280, 16)) == (2.5, 1.5, 2.5, 3.5)
+        assert stats["dma.issued_ops"] == 3
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
     def test_staged_matmul_smoke_builder_executes_end_to_end(self) -> None:
         """The staged matmul builder should DMA through scratchpad before compute."""
         problem = KernelProblem(
@@ -202,6 +230,35 @@ class TestWorkloadBuilders:
 
         assert engine.state.halted
         assert unpack_int32(engine.state.dram.read(0x380, 16)) == (19, 22, 43, 50)
+        assert stats["dma.issued_ops"] == 3
+        assert stats["mxu.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_staged_matmul_smoke_builder_executes_float32_end_to_end(self) -> None:
+        """The staged matmul builder should support float32 tensor payloads."""
+        problem = KernelProblem(
+            name="staged-matmul-float32",
+            input_shapes=((2, 2), (2, 2)),
+            output_shape=(2, 2),
+        )
+        config = self.make_config()
+        program = ProgramBuilder(base_address=0x1000).build_staged_matmul_smoke_test(
+            problem=problem,
+            lhs_address=0x300,
+            rhs_address=0x340,
+            output_address=0x380,
+            acc_dtype="float32",
+            out_dtype="float32",
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+        engine = SimulatorEngine(config=config, program=program)
+        engine.state.dram.write(0x300, pack_float32([0.5, 1.0, 1.5, 2.0]))
+        engine.state.dram.write(0x340, pack_float32([2.0, 0.5, 1.0, 1.5]))
+
+        stats = engine.run(max_cycles=400).snapshot()
+
+        assert engine.state.halted
+        assert unpack_float32(engine.state.dram.read(0x380, 16)) == (2.0, 1.75, 5.0, 3.75)
         assert stats["dma.issued_ops"] == 3
         assert stats["mxu.issued_ops"] == 1
         assert stats["stall_fence"] >= 1
