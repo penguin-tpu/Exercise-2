@@ -55,7 +55,7 @@ class TestDMASlice:
         assert stats["stall_fence"] >= 1
 
     def test_dma_queue_occupancy_histogram_tracks_multiple_inflight_transfers(self) -> None:
-        """Back-to-back DMA copies should populate queue-occupancy histogram buckets."""
+        """Back-to-back DMA copies should populate unit and event-queue occupancy histograms."""
         scratchpad_base = self.make_config().machine.scratchpad_base_address
         program = (
             ProgramBuilder(base_address=0x1000)
@@ -80,3 +80,6 @@ class TestDMASlice:
         assert stats["dma.max_queue_occupancy"] == 2
         assert stats["dma.queue_occupancy.1"] >= 1
         assert stats["dma.queue_occupancy.2"] >= 1
+        assert stats["event_queue.max_pending"] == 2
+        assert stats["event_queue.pending.1"] >= 1
+        assert stats["event_queue.pending.2"] >= 1
