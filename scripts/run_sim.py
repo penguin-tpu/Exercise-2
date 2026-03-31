@@ -19,7 +19,7 @@ from perf_modeling.cli_support import (
     parse_image_load_spec,
     prepare_output_path,
 )
-from perf_modeling.config import available_config_names, get_named_config
+from perf_modeling.config import available_config_names, describe_named_config, get_named_config
 from perf_modeling.decode import Decoder
 from perf_modeling.reporting import build_run_summary, emit_report
 
@@ -50,6 +50,11 @@ def parse_args() -> argparse.Namespace:
         choices=available_config_names(),
         default="baseline",
         help="Named accelerator configuration preset to use for the run.",
+    )
+    parser.add_argument(
+        "--list-configs",
+        action="store_true",
+        help="Print the available named accelerator configuration presets and exit.",
     )
     parser.add_argument(
         "--dram-load",
@@ -189,6 +194,10 @@ def build_default_program() -> bytes:
 def main() -> None:
     """Load and run one RV32I program image."""
     args = parse_args()
+    if args.list_configs:
+        for config_name in available_config_names():
+            print(f"config name={config_name} description={describe_named_config(config_name)}")
+        return
     decoder = Decoder()
     if args.program is None:
         blob = build_default_program()

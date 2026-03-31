@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 from perf_modeling import AcceleratorConfig
-from perf_modeling.config import available_config_names, get_named_config
+from perf_modeling.config import available_config_names, describe_named_config, get_named_config
 from perf_modeling.reporting import emit_report
 
 
@@ -591,7 +591,30 @@ class TestRunSimCLI:
         """The package should expose stable named configuration presets for CLI selection."""
         assert available_config_names() == ("baseline", "tiny_debug", "balanced_ml", "throughput_ml")
         assert get_named_config("baseline") == AcceleratorConfig()
+        assert "debug" in describe_named_config("tiny_debug")
         assert get_named_config("throughput_ml").core.vector.lanes > get_named_config("baseline").core.vector.lanes
+
+    def test_run_sim_lists_named_config_presets(self) -> None:
+        """The CLI should print the available named config presets without running a program."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                str(script),
+                "--list-configs",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+            cwd=repo_root,
+        )
+
+        assert "config name=baseline description=" in result.stdout
+        assert "config name=tiny_debug description=" in result.stdout
+        assert "program=" not in result.stdout
 
     def test_run_sim_prints_filtered_stats_and_trace_tail(self) -> None:
         """The CLI should print filtered stat families and a bounded trace tail on request."""

@@ -62,6 +62,8 @@ uv run python scripts/run_sim.py path/to/program.elf
 Useful common options:
 
 - `--max-cycles 100000`
+- `--config baseline`
+- `--list-configs`
 - `--output-dir out`
 - `--stats-json stats.json`
 - `--trace-json trace.json`
@@ -84,6 +86,12 @@ uv run python scripts/run_sim.py tests/workload/scalar_int_matmul.S \
 ```
 
 Relative artifact paths are rooted under `out/` by default.
+
+List the packaged hardware presets:
+
+```bash
+uv run python scripts/run_sim.py --list-configs
+```
 
 ## Reports
 

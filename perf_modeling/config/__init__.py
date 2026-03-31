@@ -211,7 +211,13 @@ class AcceleratorConfig:
     """Configuration for trace capture and debugging output."""
 
 
-from perf_modeling.config.presets import CONFIG_PRESETS, available_config_names, get_named_config
+from perf_modeling.config.presets import (
+    CONFIG_DESCRIPTIONS,
+    CONFIG_PRESETS,
+    available_config_names,
+    describe_named_config,
+    get_named_config,
+)
 
 __all__ = [
     "AcceleratorConfig",
@@ -229,5 +235,6 @@ __all__ = [
     "TraceConfig",
     "VectorUnitConfig",
     "available_config_names",
+    "describe_named_config",
     "get_named_config",
 ]

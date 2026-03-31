@@ -89,10 +89,23 @@ CONFIG_PRESETS: dict[str, AcceleratorConfig] = {
 }
 """Named example hardware configurations exposed by the CLI."""
 
+CONFIG_DESCRIPTIONS: dict[str, str] = {
+    "baseline": "Default balanced simulator baseline used by most tests and examples.",
+    "tiny_debug": "Small and slower preset for easy tracing and quick debug runs.",
+    "balanced_ml": "Midrange accelerator preset for mixed DMA, vector, and MXU workloads.",
+    "throughput_ml": "Wide throughput-oriented preset with larger vector, DMA, and MXU capacity.",
+}
+"""Short descriptions for the named hardware configuration presets."""
+
 
 def available_config_names() -> tuple[str, ...]:
     """Return the stable list of selectable configuration preset names."""
     return tuple(CONFIG_PRESETS)
+
+
+def describe_named_config(name: str) -> str:
+    """Return the short human-readable description for one named config preset."""
+    return CONFIG_DESCRIPTIONS[name]
 
 
 def get_named_config(name: str) -> AcceleratorConfig:
