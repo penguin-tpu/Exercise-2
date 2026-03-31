@@ -416,6 +416,39 @@ class TestWorkloadBuilders:
         assert stats["vector.issued_ops"] == 2
         assert stats["stall_fence"] >= 1
 
+    def test_two_layer_mlp_smoke_builder_executes_float32_end_to_end(self) -> None:
+        """The two-layer MLP builder should emit a runnable multi-stage tensor microbenchmark."""
+        problem = KernelProblem(
+            name="two-layer-mlp-float32",
+            input_shapes=((1, 2), (2, 3), (1, 3), (3, 2), (1, 2)),
+            output_shape=(1, 2),
+        )
+        program = ProgramBuilder(base_address=0x1000).build_two_layer_mlp_smoke_test(
+            problem=problem,
+            input_address=0x500,
+            weight0_address=0x520,
+            bias0_address=0x540,
+            weight1_address=0x560,
+            bias1_address=0x580,
+            output_address=0x5A0,
+            acc_dtype="float32",
+            out_dtype="float32",
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x500, pack_float32([1.0, -2.0]))
+        engine.state.dram.write(0x520, pack_float32([2.0, -1.0, 0.5, 1.5, 0.25, -2.0]))
+        engine.state.dram.write(0x540, pack_float32([0.5, 2.0, -1.0]))
+        engine.state.dram.write(0x560, pack_float32([1.0, -1.0, 0.5, 2.0, -1.5, 0.25]))
+        engine.state.dram.write(0x580, pack_float32([1.0, -0.5]))
+
+        stats = engine.run(max_cycles=500).snapshot()
+
+        assert engine.state.halted
+        assert unpack_float32(engine.state.dram.read(0x5A0, 8)) == (-4.0, 1.375)
+        assert stats["mxu.issued_ops"] == 2
+        assert stats["vector.issued_ops"] == 3
+        assert stats["stall_fence"] >= 1
+
     def test_staged_vector_add_smoke_builder_executes_end_to_end(self) -> None:
         """The staged vector-add builder should DMA through scratchpad before compute."""
         problem = KernelProblem(
@@ -828,4 +861,40 @@ class TestWorkloadBuilders:
         assert stats["dma.issued_ops"] == 4
         assert stats["mxu.issued_ops"] == 1
         assert stats["vector.issued_ops"] == 2
+        assert stats["stall_fence"] >= 1
+
+    def test_staged_two_layer_mlp_smoke_builder_executes_float32_end_to_end(self) -> None:
+        """The staged two-layer MLP builder should DMA through scratchpad before compute."""
+        problem = KernelProblem(
+            name="staged-two-layer-mlp-float32",
+            input_shapes=((1, 2), (2, 3), (1, 3), (3, 2), (1, 2)),
+            output_shape=(1, 2),
+        )
+        config = self.make_config()
+        program = ProgramBuilder(base_address=0x1000).build_staged_two_layer_mlp_smoke_test(
+            problem=problem,
+            input_address=0x500,
+            weight0_address=0x520,
+            bias0_address=0x540,
+            weight1_address=0x560,
+            bias1_address=0x580,
+            output_address=0x5A0,
+            acc_dtype="float32",
+            out_dtype="float32",
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+        engine = SimulatorEngine(config=config, program=program)
+        engine.state.dram.write(0x500, pack_float32([1.0, -2.0]))
+        engine.state.dram.write(0x520, pack_float32([2.0, -1.0, 0.5, 1.5, 0.25, -2.0]))
+        engine.state.dram.write(0x540, pack_float32([0.5, 2.0, -1.0]))
+        engine.state.dram.write(0x560, pack_float32([1.0, -1.0, 0.5, 2.0, -1.5, 0.25]))
+        engine.state.dram.write(0x580, pack_float32([1.0, -0.5]))
+
+        stats = engine.run(max_cycles=800).snapshot()
+
+        assert engine.state.halted
+        assert unpack_float32(engine.state.dram.read(0x5A0, 8)) == (-4.0, 1.375)
+        assert stats["dma.issued_ops"] == 6
+        assert stats["mxu.issued_ops"] == 2
+        assert stats["vector.issued_ops"] == 3
         assert stats["stall_fence"] >= 1

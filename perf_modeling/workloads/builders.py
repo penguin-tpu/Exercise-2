@@ -754,6 +754,135 @@ class ProgramBuilder:
             .build(name=f"{problem.name}-dense-relu-staged-smoke")
         )
 
+    def build_two_layer_mlp_smoke_test(
+        self,
+        problem: KernelProblem,
+        input_address: int,
+        weight0_address: int,
+        bias0_address: int,
+        weight1_address: int,
+        bias1_address: int,
+        output_address: int,
+        acc_dtype: str,
+        out_dtype: str,
+    ) -> Program:
+        """Construct a two-layer MLP-style microbenchmark with one hidden ReLU."""
+        if len(problem.input_shapes) != 5:
+            raise ValueError("Two-layer MLP smoke tests expect input, two weights, and two bias tensors.")
+        input_shape = problem.input_shapes[0]
+        weight0_shape = problem.input_shapes[1]
+        bias0_shape = problem.input_shapes[2]
+        weight1_shape = problem.input_shapes[3]
+        bias1_shape = problem.input_shapes[4]
+        if len(input_shape) != 2 or len(weight0_shape) != 2 or len(bias0_shape) != 2:
+            raise ValueError("Two-layer MLP smoke tests expect rank-2 first-layer tensors.")
+        if len(weight1_shape) != 2 or len(bias1_shape) != 2:
+            raise ValueError("Two-layer MLP smoke tests expect rank-2 second-layer tensors.")
+        if input_shape[1] != weight0_shape[0]:
+            raise ValueError("Two-layer MLP smoke tests expect compatible first-layer matmul dimensions.")
+        hidden_shape = (input_shape[0], weight0_shape[1])
+        if bias0_shape != hidden_shape:
+            raise ValueError("Two-layer MLP smoke tests expect first bias shape to match the hidden tensor.")
+        if hidden_shape[1] != weight1_shape[0]:
+            raise ValueError("Two-layer MLP smoke tests expect compatible second-layer matmul dimensions.")
+        final_shape = (hidden_shape[0], weight1_shape[1])
+        if bias1_shape != final_shape:
+            raise ValueError("Two-layer MLP smoke tests expect second bias shape to match the final tensor.")
+        if problem.output_shape != final_shape:
+            raise ValueError("Two-layer MLP smoke-test output shape must match the final tensor.")
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_tensor_load(dest_tensor=0, address=input_address, shape=input_shape, dtype=out_dtype)
+            .emit_tensor_load(dest_tensor=1, address=weight0_address, shape=weight0_shape, dtype=out_dtype)
+            .emit_tensor_load(dest_tensor=2, address=bias0_address, shape=bias0_shape, dtype=out_dtype)
+            .emit_tensor_load(dest_tensor=3, address=weight1_address, shape=weight1_shape, dtype=out_dtype)
+            .emit_tensor_load(dest_tensor=4, address=bias1_address, shape=bias1_shape, dtype=out_dtype)
+            .emit_matmul(dest_tensor=5, lhs_tensor=0, rhs_tensor=1, acc_dtype=acc_dtype, out_dtype=out_dtype)
+            .emit_vector_add(dest_tensor=6, lhs_tensor=5, rhs_tensor=2, out_dtype=out_dtype)
+            .emit_vector_relu(dest_tensor=7, source_tensor=6, out_dtype=out_dtype)
+            .emit_matmul(dest_tensor=8, lhs_tensor=7, rhs_tensor=3, acc_dtype=acc_dtype, out_dtype=out_dtype)
+            .emit_vector_add(dest_tensor=9, lhs_tensor=8, rhs_tensor=4, out_dtype=out_dtype)
+            .emit_tensor_store(source_tensor=9, address=output_address)
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-two-layer-mlp-smoke")
+        )
+
+    def build_staged_two_layer_mlp_smoke_test(
+        self,
+        problem: KernelProblem,
+        input_address: int,
+        weight0_address: int,
+        bias0_address: int,
+        weight1_address: int,
+        bias1_address: int,
+        output_address: int,
+        acc_dtype: str,
+        out_dtype: str,
+        scratchpad_base_address: int,
+    ) -> Program:
+        """Construct a staged two-layer MLP-style microbenchmark with one hidden ReLU."""
+        if len(problem.input_shapes) != 5:
+            raise ValueError("Two-layer MLP smoke tests expect input, two weights, and two bias tensors.")
+        input_shape = problem.input_shapes[0]
+        weight0_shape = problem.input_shapes[1]
+        bias0_shape = problem.input_shapes[2]
+        weight1_shape = problem.input_shapes[3]
+        bias1_shape = problem.input_shapes[4]
+        if len(input_shape) != 2 or len(weight0_shape) != 2 or len(bias0_shape) != 2:
+            raise ValueError("Two-layer MLP smoke tests expect rank-2 first-layer tensors.")
+        if len(weight1_shape) != 2 or len(bias1_shape) != 2:
+            raise ValueError("Two-layer MLP smoke tests expect rank-2 second-layer tensors.")
+        if input_shape[1] != weight0_shape[0]:
+            raise ValueError("Two-layer MLP smoke tests expect compatible first-layer matmul dimensions.")
+        hidden_shape = (input_shape[0], weight0_shape[1])
+        if bias0_shape != hidden_shape:
+            raise ValueError("Two-layer MLP smoke tests expect first bias shape to match the hidden tensor.")
+        if hidden_shape[1] != weight1_shape[0]:
+            raise ValueError("Two-layer MLP smoke tests expect compatible second-layer matmul dimensions.")
+        final_shape = (hidden_shape[0], weight1_shape[1])
+        if bias1_shape != final_shape:
+            raise ValueError("Two-layer MLP smoke tests expect second bias shape to match the final tensor.")
+        if problem.output_shape != final_shape:
+            raise ValueError("Two-layer MLP smoke-test output shape must match the final tensor.")
+        input_bytes = _tensor_payload_bytes(input_shape, out_dtype)
+        weight0_bytes = _tensor_payload_bytes(weight0_shape, out_dtype)
+        bias0_bytes = _tensor_payload_bytes(bias0_shape, out_dtype)
+        weight1_bytes = _tensor_payload_bytes(weight1_shape, out_dtype)
+        bias1_bytes = _tensor_payload_bytes(bias1_shape, out_dtype)
+        output_bytes = _tensor_payload_bytes(problem.output_shape, out_dtype)
+        input_scratch_address = scratchpad_base_address
+        weight0_scratch_address = input_scratch_address + input_bytes
+        bias0_scratch_address = weight0_scratch_address + weight0_bytes
+        weight1_scratch_address = bias0_scratch_address + bias0_bytes
+        bias1_scratch_address = weight1_scratch_address + weight1_bytes
+        output_scratch_address = bias1_scratch_address + bias1_bytes
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_dma_copy(source_address=input_address, dest_address=input_scratch_address, num_bytes=input_bytes)
+            .emit_dma_copy(source_address=weight0_address, dest_address=weight0_scratch_address, num_bytes=weight0_bytes)
+            .emit_dma_copy(source_address=bias0_address, dest_address=bias0_scratch_address, num_bytes=bias0_bytes)
+            .emit_dma_copy(source_address=weight1_address, dest_address=weight1_scratch_address, num_bytes=weight1_bytes)
+            .emit_dma_copy(source_address=bias1_address, dest_address=bias1_scratch_address, num_bytes=bias1_bytes)
+            .emit("fence")
+            .emit_tensor_load(dest_tensor=0, address=input_scratch_address, shape=input_shape, dtype=out_dtype)
+            .emit_tensor_load(dest_tensor=1, address=weight0_scratch_address, shape=weight0_shape, dtype=out_dtype)
+            .emit_tensor_load(dest_tensor=2, address=bias0_scratch_address, shape=bias0_shape, dtype=out_dtype)
+            .emit_tensor_load(dest_tensor=3, address=weight1_scratch_address, shape=weight1_shape, dtype=out_dtype)
+            .emit_tensor_load(dest_tensor=4, address=bias1_scratch_address, shape=bias1_shape, dtype=out_dtype)
+            .emit_matmul(dest_tensor=5, lhs_tensor=0, rhs_tensor=1, acc_dtype=acc_dtype, out_dtype=out_dtype)
+            .emit_vector_add(dest_tensor=6, lhs_tensor=5, rhs_tensor=2, out_dtype=out_dtype)
+            .emit_vector_relu(dest_tensor=7, source_tensor=6, out_dtype=out_dtype)
+            .emit_matmul(dest_tensor=8, lhs_tensor=7, rhs_tensor=3, acc_dtype=acc_dtype, out_dtype=out_dtype)
+            .emit_vector_add(dest_tensor=9, lhs_tensor=8, rhs_tensor=4, out_dtype=out_dtype)
+            .emit_tensor_store(source_tensor=9, address=output_scratch_address)
+            .emit("fence")
+            .emit_dma_copy(source_address=output_scratch_address, dest_address=output_address, num_bytes=output_bytes)
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-two-layer-mlp-staged-smoke")
+        )
+
     def build_matmul_smoke_test(
         self,
         problem: KernelProblem,
