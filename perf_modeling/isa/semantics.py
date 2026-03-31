@@ -494,6 +494,7 @@ def _plan_jal(
         state.scalar_regs.write(rd, link_value)
         state.jump(target)
         state.fetch_stalled = False
+        state.fetch_stall_reason = None
 
     return _scalar_plan(cycle, config, "scalar", on_complete, f"jal @ 0x{pc:08x}")
 
@@ -519,6 +520,7 @@ def _plan_jalr(
         state.scalar_regs.write(rd, link_value)
         state.jump(target)
         state.fetch_stalled = False
+        state.fetch_stall_reason = None
 
     return _scalar_plan(cycle, config, "scalar", on_complete, f"jalr @ 0x{pc:08x}")
 
@@ -556,6 +558,7 @@ def _plan_branch(
     def on_complete() -> None:
         state.jump(target)
         state.fetch_stalled = False
+        state.fetch_stall_reason = None
 
     return _scalar_plan(cycle, config, "scalar", on_complete, f"{instruction.opcode} @ 0x{pc:08x}")
 
@@ -1064,6 +1067,7 @@ def _plan_mret(
     def on_complete() -> None:
         state.jump(target)
         state.fetch_stalled = False
+        state.fetch_stall_reason = None
 
     return _scalar_plan(cycle, config, "scalar", on_complete, f"mret @ 0x{pc:08x}")
 

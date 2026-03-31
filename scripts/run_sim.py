@@ -119,6 +119,7 @@ def build_run_summary(stats: dict[str, int]) -> dict[str, object]:
     retired = stats.get("instructions_retired", 0)
     total_stalls = sum(value for key, value in stats.items() if key.startswith("stall_"))
     fetch_stall_cycles = stats.get("fetch_stall_cycles", 0)
+    fetch_keys = sorted(key for key in stats if key.startswith("fetch_stall.") and key.endswith("_cycles"))
 
     unit_names = sorted(
         {
@@ -182,6 +183,12 @@ def build_run_summary(stats: dict[str, int]) -> dict[str, object]:
     event_keys = sorted(key for key in stats if key.startswith("event_queue.pending."))
     event_samples = sum(stats[key] for key in event_keys)
     event_weighted_depth = sum(int(key.removeprefix("event_queue.pending.")) * stats[key] for key in event_keys)
+    top_fetch_reason = "none"
+    top_fetch_cycles = -1
+    for key in fetch_keys:
+        if stats[key] > top_fetch_cycles:
+            top_fetch_reason = key.removeprefix("fetch_stall.").removesuffix("_cycles")
+            top_fetch_cycles = stats[key]
 
     return {
         "pipeline": {
@@ -216,6 +223,12 @@ def build_run_summary(stats: dict[str, int]) -> dict[str, object]:
             "avg_pending": _format_average(event_weighted_depth, event_samples),
             "max_pending": stats.get("event_queue.max_pending", 0),
         },
+        "fetch": {
+            "cycles": fetch_stall_cycles,
+            "pct": _format_percentage(fetch_stall_cycles, cycles),
+            "top_reason": top_fetch_reason,
+            "top_reason_cycles": max(top_fetch_cycles, 0),
+        },
     }
 
 
@@ -249,6 +262,7 @@ def emit_report(
         memory_hotspot = summary["memory_hotspot"]
         contention_hotspot = summary["contention_hotspot"]
         event_queue = summary["event_queue"]
+        fetch = summary["fetch"]
         print(
             f"report summary pipeline cycles={pipeline['cycles']} issued={pipeline['issued']} retired={pipeline['retired']} total_stalls={pipeline['total_stalls']} fetch_stall_cycles={pipeline['fetch_stall_cycles']} fetch_stall_pct={pipeline['fetch_stall_pct']}"
         )
@@ -266,6 +280,9 @@ def emit_report(
         )
         print(
             f"report summary events samples={event_queue['samples']} avg_pending={event_queue['avg_pending']} max_pending={event_queue['max_pending']}"
+        )
+        print(
+            f"report summary fetch cycles={fetch['cycles']} pct={fetch['pct']} top_reason={fetch['top_reason']} top_reason_cycles={fetch['top_reason_cycles']}"
         )
         return
     if report_name == "latency":
@@ -323,6 +340,31 @@ def emit_report(
         for key in event_keys:
             depth = key.removeprefix("event_queue.pending.")
             print(f"report events pending={depth} samples={stats[key]}")
+        return
+    if report_name == "fetch":
+        fetch_keys = sorted(
+            key
+            for key in stats
+            if key.startswith("fetch_stall.") and key.endswith("_cycles")
+        )
+        fetch_keys = [key for key in fetch_keys if _matches_report_filter(key, report_match)]
+        total_cycles = stats.get("fetch_stall_cycles", 0)
+        top_reason = "none"
+        top_reason_cycles = 0
+        for key in fetch_keys:
+            if stats[key] > top_reason_cycles:
+                top_reason = key.removeprefix("fetch_stall.").removesuffix("_cycles")
+                top_reason_cycles = stats[key]
+        print(
+            f"report fetch_summary cycles={total_cycles} pct={_format_percentage(total_cycles, stats.get('cycles', 0))} top_reason={top_reason} top_reason_cycles={top_reason_cycles}"
+        )
+        if report_limit is not None:
+            fetch_keys = sorted(fetch_keys, key=lambda key: (-stats[key], key))[:report_limit]
+        for key in fetch_keys:
+            reason = key.removeprefix("fetch_stall.").removesuffix("_cycles")
+            print(
+                f"report fetch reason={reason} cycles={stats[key]} pct={_format_percentage(stats[key], total_cycles)}"
+            )
         return
     if report_name == "memory":
         read_keys = sorted(key for key in stats if key.endswith(".bytes_read"))
@@ -560,7 +602,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report",
         action="append",
-        choices=("summary", "latency", "occupancy", "events", "memory", "contention", "stalls", "pipeline", "units", "isa"),
+        choices=("summary", "latency", "occupancy", "events", "fetch", "memory", "contention", "stalls", "pipeline", "units", "isa"),
         default=[],
         help="Print a curated report for one stats family. May be repeated.",
     )

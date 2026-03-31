@@ -350,6 +350,8 @@ class TestRV32I:
         assert engine.state.exit_code == 7
         assert engine.state.scalar_regs.read(3) == 0
         assert stats["fetch_stall_cycles"] == 4
+        assert stats["fetch_stall.branch_cycles"] == 2
+        assert stats["fetch_stall.system_cycles"] == 2
         assert stats["instructions_retired"] == 3
 
     def test_csr_reads_writes_and_dependency_stalls(self) -> None:

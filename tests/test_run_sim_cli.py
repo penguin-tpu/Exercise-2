@@ -546,6 +546,7 @@ class TestRunSimCLI:
         assert manifest_payload["summary"]["pipeline"]["cycles"] == manifest_payload["cycles"]
         assert manifest_payload["summary"]["pipeline"]["retired"] > 0
         assert "fetch_stall_cycles" in manifest_payload["summary"]["pipeline"]
+        assert "top_reason" in manifest_payload["summary"]["fetch"]
         assert manifest_payload["summary"]["busiest_unit"]["name"] != ""
         assert manifest_payload["summary"]["latency_hotspot"]["opcode"] != ""
         assert "max_pending" in manifest_payload["summary"]["event_queue"]
@@ -579,7 +580,7 @@ class TestRunSimCLI:
         assert "trace cycle=" in result.stdout
 
     def test_run_sim_reports_curated_latency_and_occupancy_views(self) -> None:
-        """The CLI should print curated summary, latency, occupancy, memory, stall, pipeline, unit, and ISA reports on request."""
+        """The CLI should print curated summary, latency, occupancy, fetch, memory, stall, pipeline, unit, and ISA reports on request."""
         repo_root = Path(__file__).resolve().parent.parent
         script = repo_root / "scripts" / "run_sim.py"
         result = subprocess.run(
@@ -596,6 +597,8 @@ class TestRunSimCLI:
                 "occupancy",
                 "--report",
                 "events",
+                "--report",
+                "fetch",
                 "--report",
                 "memory",
                 "--report",
@@ -621,10 +624,13 @@ class TestRunSimCLI:
         assert "report summary memory key=none total_bytes=0" in result.stdout
         assert "report summary contention key=none value=0" in result.stdout
         assert "report summary events samples=3 avg_pending=0.67 max_pending=1" in result.stdout
+        assert "report summary fetch cycles=1 pct=33.33 top_reason=system top_reason_cycles=1" in result.stdout
         assert "report latency opcode=addi" in result.stdout
         assert "avg_cycles=1.00" in result.stdout
         assert "report occupancy_summary unit=scalar samples=3 avg_depth=0.67 max_depth=1" in result.stdout
         assert "report events_summary samples=3 avg_pending=0.67 max_pending=1" in result.stdout
+        assert "report fetch_summary cycles=1 pct=33.33 top_reason=system top_reason_cycles=1" in result.stdout
+        assert "report fetch reason=system cycles=1 pct=100.00" in result.stdout
         assert "report memory_summary direction=read total_bytes=0" in result.stdout
         assert "report memory_summary direction=write total_bytes=0" in result.stdout
         assert "report contention_summary family=stall total=0" in result.stdout
@@ -752,6 +758,22 @@ class TestRunSimCLI:
         assert "report events pending=0 samples=1" in captured.out
         assert "report events pending=2 samples=3" in captured.out
 
+    def test_emit_report_prints_fetch_stall_summary_from_reason_counters(self, capsys: object) -> None:
+        """The fetch report should summarize aggregate and per-reason frontend stall cycles."""
+        stats = {
+            "cycles": 10,
+            "fetch_stall_cycles": 4,
+            "fetch_stall.branch_cycles": 3,
+            "fetch_stall.system_cycles": 1,
+        }
+
+        emit_report("fetch", stats)
+        captured = capsys.readouterr()
+
+        assert "report fetch_summary cycles=4 pct=40.00 top_reason=branch top_reason_cycles=3" in captured.out
+        assert "report fetch reason=branch cycles=3 pct=75.00" in captured.out
+        assert "report fetch reason=system cycles=1 pct=25.00" in captured.out
+
     def test_emit_report_prints_stall_summary_and_categories(self, capsys: object) -> None:
         """The stall report should emit total and per-category counters."""
         stats = {
@@ -806,18 +828,22 @@ class TestRunSimCLI:
             "event_queue.pending.0": 1,
             "event_queue.pending.2": 3,
             "event_queue.max_pending": 2,
+            "fetch_stall_cycles": 4,
+            "fetch_stall.branch_cycles": 3,
+            "fetch_stall.jump_cycles": 1,
             "stall_fence": 1,
         }
 
         emit_report("summary", stats)
         captured = capsys.readouterr()
 
-        assert "report summary pipeline cycles=10 issued=5 retired=4 total_stalls=1 fetch_stall_cycles=2 fetch_stall_pct=20.00" in captured.out
+        assert "report summary pipeline cycles=10 issued=5 retired=4 total_stalls=1 fetch_stall_cycles=4 fetch_stall_pct=40.00" in captured.out
         assert "report summary unit=scalar busy_cycles=6 busy_pct=60.00 issued_ops=3" in captured.out
         assert "report summary latency opcode=dma_copy avg_cycles=4.00 max_cycles=5" in captured.out
         assert "report summary memory key=dram.bytes_read total_bytes=64" in captured.out
         assert "report summary contention key=scratchpad.port_conflict.sp_read_port_0 value=3" in captured.out
         assert "report summary events samples=4 avg_pending=1.50 max_pending=2" in captured.out
+        assert "report summary fetch cycles=4 pct=40.00 top_reason=branch top_reason_cycles=3" in captured.out
 
     def test_emit_report_respects_report_limit(self, capsys: object) -> None:
         """Multi-row reports should honor the optional report-limit argument."""

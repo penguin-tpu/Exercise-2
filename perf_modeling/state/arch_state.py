@@ -44,6 +44,7 @@ class ArchState:
     pc: int = 0
     halted: bool = False
     fetch_stalled: bool = False
+    fetch_stall_reason: str | None = None
     exit_code: int | None = None
     trap_reason: str | None = None
     retired_instructions: int = 0
@@ -82,6 +83,7 @@ class ArchState:
         self.pc = self.machine_config.reset_pc
         self.halted = False
         self.fetch_stalled = False
+        self.fetch_stall_reason = None
         self.exit_code = None
         self.trap_reason = None
         self.retired_instructions = 0
@@ -127,12 +129,14 @@ class ArchState:
         """Stop architectural execution with an optional exit code."""
         self.halted = True
         self.fetch_stalled = False
+        self.fetch_stall_reason = None
         self.exit_code = exit_code
 
     def trap(self, reason: str) -> None:
         """Stop architectural execution because of a fatal machine trap."""
         self.halted = True
         self.fetch_stalled = False
+        self.fetch_stall_reason = None
         self.trap_reason = reason
 
     def enter_trap(self, trap: MachineTrap, cycle: int) -> int:
@@ -143,6 +147,7 @@ class ArchState:
         self.trap_reason = trap.reason
         self.halted = False
         self.fetch_stalled = False
+        self.fetch_stall_reason = None
         target = self.csr_file.read(CSR_MTVEC, cycle, self.retired_instructions)
         self.jump(target)
         return target

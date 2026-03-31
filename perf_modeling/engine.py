@@ -199,6 +199,7 @@ class SimulatorEngine:
         )
         if instruction.metadata.get("is_control", False):
             self.state.fetch_stalled = True
+            self.state.fetch_stall_reason = self._fetch_stall_reason_for_instruction(instruction.opcode)
         else:
             self.state.next_pc(self.config.machine.instruction_bytes)
         self.stats.increment("instructions_issued", 1)
@@ -210,6 +211,8 @@ class SimulatorEngine:
         self.stats.increment("cycles", 1)
         if self.state.fetch_stalled and not self.state.halted:
             self.stats.increment("fetch_stall_cycles", 1)
+            if self.state.fetch_stall_reason is not None:
+                self.stats.increment(f"fetch_stall.{self.state.fetch_stall_reason}_cycles", 1)
         self.stats.record_event_queue_occupancy(self.event_queue.pending_count())
         for unit in self.iter_units():
             self.stats.record_queue_occupancy(unit.name, unit.status.queued_ops)
@@ -291,6 +294,16 @@ class SimulatorEngine:
         if unit_name == "mxu":
             return self.mxu_unit
         raise KeyError(f"Unsupported unit selection {unit_name!r}.")
+
+    def _fetch_stall_reason_for_instruction(self, opcode: str) -> str:
+        """Map one control opcode into a stable fetch-stall reason bucket."""
+        if opcode in {"beq", "bne", "blt", "bge", "bltu", "bgeu"}:
+            return "branch"
+        if opcode in {"jal", "jalr"}:
+            return "jump"
+        if opcode in {"ecall", "ebreak", "mret"}:
+            return "system"
+        return "control"
 
     def _wrap_completion_callback(self, instruction: object, unit: object, plan: object) -> object:
         """Wrap the instruction completion to release hazards and unit occupancy."""
