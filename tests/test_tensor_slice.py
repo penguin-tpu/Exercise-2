@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import struct
-import unittest
 
 from perf_modeling.config import AcceleratorConfig, CoreConfig, DRAMConfig, ScalarUnitConfig
 from perf_modeling.engine import SimulatorEngine
@@ -20,7 +19,7 @@ def unpack_int32(blob: bytes) -> tuple[int, ...]:
     return struct.unpack("<" + "i" * (len(blob) // 4), blob)
 
 
-class TensorSliceTestCase(unittest.TestCase):
+class TestTensorSlice:
     """Exercise the first accelerator-side tensor vertical slice."""
 
     def make_config(self) -> AcceleratorConfig:
@@ -57,15 +56,11 @@ class TensorSliceTestCase(unittest.TestCase):
 
         stats = engine.run(max_cycles=200).snapshot()
 
-        self.assertTrue(engine.state.halted)
-        self.assertEqual(tuple(engine.state.tensor_regs.read(2).payload.reshape(-1).tolist()), (6, 8, 10, 12))
-        self.assertEqual(tuple(engine.state.tensor_regs.read(3).payload.reshape(-1).tolist()), (19, 22, 43, 50))
-        self.assertEqual(unpack_int32(engine.state.dram.read(0x280, 16)), (6, 8, 10, 12))
-        self.assertEqual(unpack_int32(engine.state.scratchpad.read(0, 16)), (19, 22, 43, 50))
-        self.assertEqual(stats["vector.issued_ops"], 1)
-        self.assertEqual(stats["mxu.issued_ops"], 1)
-        self.assertGreaterEqual(stats["load_store.issued_ops"], 4)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert engine.state.halted
+        assert tuple(engine.state.tensor_regs.read(2).payload.reshape(-1).tolist()) == (6, 8, 10, 12)
+        assert tuple(engine.state.tensor_regs.read(3).payload.reshape(-1).tolist()) == (19, 22, 43, 50)
+        assert unpack_int32(engine.state.dram.read(0x280, 16)) == (6, 8, 10, 12)
+        assert unpack_int32(engine.state.scratchpad.read(0, 16)) == (19, 22, 43, 50)
+        assert stats["vector.issued_ops"] == 1
+        assert stats["mxu.issued_ops"] == 1
+        assert stats["load_store.issued_ops"] >= 4

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import unittest
-
 from perf_modeling.config import AcceleratorConfig, CoreConfig, DMAConfig, DRAMConfig
 from perf_modeling.engine import SimulatorEngine
 from perf_modeling.workloads.builders import ProgramBuilder
 
 
-class DMASliceTestCase(unittest.TestCase):
+class TestDMASlice:
     """Exercise the DMA placeholder path through the event queue."""
 
     def make_config(self) -> AcceleratorConfig:
@@ -48,12 +46,8 @@ class DMASliceTestCase(unittest.TestCase):
 
         stats = engine.run(max_cycles=200).snapshot()
 
-        self.assertTrue(engine.state.halted)
-        self.assertEqual(engine.state.exit_code, 9)
-        self.assertEqual(engine.state.scratchpad.read(0, 16), b"abcdefghijklmnop")
-        self.assertEqual(stats["dma.issued_ops"], 1)
-        self.assertGreaterEqual(stats["stall_fence"], 1)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert engine.state.halted
+        assert engine.state.exit_code == 9
+        assert engine.state.scratchpad.read(0, 16) == b"abcdefghijklmnop"
+        assert stats["dma.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1

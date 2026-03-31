@@ -1,3 +1,3 @@
 -[x] move the user-level entry scripts to under ./scripts/
 -[x] properly set up RISC-V toolchain under ./toolchains/, compile programs with them, and generate ELF files that are consumed by the perf model.
--[] refactor scripts in tests/ to use `pytest` to perform tests
+-[x] refactor scripts in tests/ to use `pytest` to perform tests

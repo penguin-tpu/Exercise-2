@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import struct
-import unittest
 
 from perf_modeling.config import (
     AcceleratorConfig,
@@ -174,7 +173,7 @@ def build_minimal_riscv_elf(code: bytes, entry_point: int = 0x1000) -> bytes:
 ELF_MAGIC = b"\x7fELF"
 
 
-class RV32ITestCase(unittest.TestCase):
+class TestRV32I:
     """Exercise the RV32I functional and timing model."""
 
     def make_config(self, scalar_latency_cycles: int = 1) -> AcceleratorConfig:
@@ -257,7 +256,7 @@ class RV32ITestCase(unittest.TestCase):
         }
         program = Decoder().decode_bytes(pack_words(list(samples.values())), base_address=0x1000)
         decoded_opcodes = [program.instructions[0x1000 + index * 4].opcode for index in range(len(samples))]
-        self.assertEqual(decoded_opcodes, list(samples.keys()))
+        assert decoded_opcodes == list(samples.keys())
 
     def test_executes_arithmetic_and_branch_program(self) -> None:
         """The engine should execute scalar ALU and branch control flow correctly."""
@@ -277,15 +276,15 @@ class RV32ITestCase(unittest.TestCase):
         program = Decoder().decode_bytes(pack_words(words), base_address=0x1000, name="branch-test")
         engine = SimulatorEngine(config=self.make_config(), program=program)
         stats = engine.run(max_cycles=200)
-        self.assertTrue(engine.state.halted)
-        self.assertEqual(engine.state.exit_code, 7)
-        self.assertEqual(engine.state.scalar_regs.read(1), 0x12345678)
-        self.assertEqual(engine.state.scalar_regs.read(4), 0)
-        self.assertEqual(engine.state.scalar_regs.read(5), 0x1234567D)
-        self.assertEqual(engine.state.scalar_regs.read(6), 1)
-        self.assertEqual(engine.state.scalar_regs.read(7), 1)
-        self.assertIsNone(engine.state.trap_reason)
-        self.assertEqual(stats.snapshot()["instructions_retired"], 10)
+        assert engine.state.halted
+        assert engine.state.exit_code == 7
+        assert engine.state.scalar_regs.read(1) == 0x12345678
+        assert engine.state.scalar_regs.read(4) == 0
+        assert engine.state.scalar_regs.read(5) == 0x1234567D
+        assert engine.state.scalar_regs.read(6) == 1
+        assert engine.state.scalar_regs.read(7) == 1
+        assert engine.state.trap_reason is None
+        assert stats.snapshot()["instructions_retired"] == 10
 
     def test_executes_load_store_and_sign_extension(self) -> None:
         """The engine should execute DRAM loads and stores with correct byte semantics."""
@@ -304,12 +303,12 @@ class RV32ITestCase(unittest.TestCase):
         program = Decoder().decode_bytes(pack_words(words), base_address=0x1000, name="memory-test")
         engine = SimulatorEngine(config=self.make_config(), program=program)
         engine.run(max_cycles=400)
-        self.assertTrue(engine.state.halted)
-        self.assertEqual(engine.state.scalar_regs.read(3), 0x12345678)
-        self.assertEqual(engine.state.scalar_regs.read(5), 0xFFFF_FFFF)
-        self.assertEqual(engine.state.scalar_regs.read(6), 0xFF)
-        self.assertEqual(engine.state.dram.read(0x80, 4), b"\x78\x56\x34\x12")
-        self.assertEqual(engine.state.dram.read(0x84, 1), b"\xff")
+        assert engine.state.halted
+        assert engine.state.scalar_regs.read(3) == 0x12345678
+        assert engine.state.scalar_regs.read(5) == 0xFFFF_FFFF
+        assert engine.state.scalar_regs.read(6) == 0xFF
+        assert engine.state.dram.read(0x80, 4) == b"\x78\x56\x34\x12"
+        assert engine.state.dram.read(0x84, 1) == b"\xff"
 
     def test_reports_dependency_stalls_for_multi_cycle_scalar_pipeline(self) -> None:
         """Dependent instructions should wait for scalar writeback visibility."""
@@ -322,10 +321,10 @@ class RV32ITestCase(unittest.TestCase):
         program = Decoder().decode_bytes(pack_words(words), base_address=0x1000, name="timing-test")
         engine = SimulatorEngine(config=self.make_config(scalar_latency_cycles=2), program=program)
         stats = engine.run(max_cycles=200).snapshot()
-        self.assertTrue(engine.state.halted)
-        self.assertEqual(engine.state.scalar_regs.read(11), 3)
-        self.assertEqual(stats["stall_scalar_dependency"], 2)
-        self.assertGreaterEqual(stats["cycles"], 8)
+        assert engine.state.halted
+        assert engine.state.scalar_regs.read(11) == 3
+        assert stats["stall_scalar_dependency"] == 2
+        assert stats["cycles"] >= 8
 
     def test_csr_reads_writes_and_dependency_stalls(self) -> None:
         """CSR instructions should read, write, and scoreboard correctly."""
@@ -343,15 +342,15 @@ class RV32ITestCase(unittest.TestCase):
         program = Decoder().decode_bytes(pack_words(words), base_address=0x1000, name="csr-test")
         engine = SimulatorEngine(config=self.make_config(scalar_latency_cycles=2), program=program)
         stats = engine.run(max_cycles=200).snapshot()
-        self.assertTrue(engine.state.halted)
-        self.assertEqual(engine.state.scalar_regs.read(3), 0)
-        self.assertEqual(engine.state.scalar_regs.read(4), 0x5A)
-        self.assertEqual(engine.state.scalar_regs.read(5), 0x5A)
-        self.assertEqual(engine.state.scalar_regs.read(6), 0x5B)
-        self.assertEqual(engine.state.scalar_regs.read(7), 0)
-        self.assertGreater(engine.state.scalar_regs.read(8), 0)
-        self.assertEqual(engine.state.scalar_regs.read(9), 6)
-        self.assertGreaterEqual(stats["stall_csr_dependency"], 2)
+        assert engine.state.halted
+        assert engine.state.scalar_regs.read(3) == 0
+        assert engine.state.scalar_regs.read(4) == 0x5A
+        assert engine.state.scalar_regs.read(5) == 0x5A
+        assert engine.state.scalar_regs.read(6) == 0x5B
+        assert engine.state.scalar_regs.read(7) == 0
+        assert engine.state.scalar_regs.read(8) > 0
+        assert engine.state.scalar_regs.read(9) == 6
+        assert stats["stall_csr_dependency"] >= 2
 
     def test_trap_handler_vectors_through_mtvec_and_returns_with_mret(self) -> None:
         """Machine traps should populate CSRs, jump to `mtvec`, and resume via `mret`."""
@@ -406,11 +405,11 @@ class RV32ITestCase(unittest.TestCase):
         program = Decoder().decode_bytes(elf_blob, name="trap-handler")
         engine = SimulatorEngine(config=config, program=program)
         engine.run(max_cycles=200)
-        self.assertTrue(engine.state.halted)
-        self.assertEqual(engine.state.exit_code, 0x55)
-        self.assertEqual(engine.state.scalar_regs.read(5), 4)
-        self.assertEqual(engine.state.scalar_regs.read(7), 1)
-        self.assertEqual(engine.state.read_csr(0x341, engine.cycle), 0x100C)
+        assert engine.state.halted
+        assert engine.state.exit_code == 0x55
+        assert engine.state.scalar_regs.read(5) == 4
+        assert engine.state.scalar_regs.read(7) == 1
+        assert engine.state.read_csr(0x341, engine.cycle) == 0x100C
 
     def test_executes_scratchpad_mapped_accesses(self) -> None:
         """Scratchpad-window accesses should round-trip through the mapped SRAM path."""
@@ -450,10 +449,10 @@ class RV32ITestCase(unittest.TestCase):
         )
         engine = SimulatorEngine(config=self.make_config(), program=program)
         stats = engine.run(max_cycles=100).snapshot()
-        self.assertTrue(engine.state.halted)
-        self.assertEqual(engine.state.scalar_regs.read(3), 0x34)
-        self.assertEqual(engine.state.scratchpad.read(0, 4), b"\x34\x00\x00\x00")
-        self.assertLess(stats["cycles"], 20)
+        assert engine.state.halted
+        assert engine.state.scalar_regs.read(3) == 0x34
+        assert engine.state.scratchpad.read(0, 4) == b"\x34\x00\x00\x00"
+        assert stats["cycles"] < 20
 
     def test_loads_and_executes_minimal_elf_image(self) -> None:
         """The decoder should load a minimal ELF32 RV32I binary and run it."""
@@ -467,11 +466,7 @@ class RV32ITestCase(unittest.TestCase):
         program = Decoder().decode_bytes(elf_blob, name="elf-test")
         engine = SimulatorEngine(config=self.make_config(), program=program)
         engine.run(max_cycles=50)
-        self.assertTrue(engine.state.halted)
-        self.assertEqual(engine.state.exit_code, 5)
-        self.assertEqual(program.entry_point, 0x1000)
-        self.assertEqual(program.segments[0].data[: len(code)], code)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert engine.state.halted
+        assert engine.state.exit_code == 5
+        assert program.entry_point == 0x1000
+        assert program.segments[0].data[: len(code)] == code

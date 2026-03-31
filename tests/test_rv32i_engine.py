@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import struct
-import unittest
 
 from perf_modeling.config import AcceleratorConfig
 from perf_modeling.decode import Decoder
@@ -119,7 +118,7 @@ def run_program(words: list[int], max_cycles: int = 1000, as_elf: bool = False) 
     return engine
 
 
-class Rv32iEngineTests(unittest.TestCase):
+class TestRv32iEngine:
     """End-to-end verification coverage for the RV32I engine slice."""
 
     def test_rv32i_scalar_alu_program_runs_to_ebreak(self) -> None:
@@ -134,12 +133,12 @@ class Rv32iEngineTests(unittest.TestCase):
             0x0010_0073,
         ]
         engine = run_program(words, max_cycles=32)
-        self.assertTrue(engine.state.halted)
-        self.assertEqual(engine.state.exit_code, 24)
-        self.assertEqual(engine.state.scalar_regs.read(3), 12)
-        self.assertEqual(engine.state.scalar_regs.read(4), 24)
-        self.assertEqual(engine.state.scalar_regs.read(5), 1)
-        self.assertEqual(engine.stats.counters["instructions_retired"], 7)
+        assert engine.state.halted
+        assert engine.state.exit_code == 24
+        assert engine.state.scalar_regs.read(3) == 12
+        assert engine.state.scalar_regs.read(4) == 24
+        assert engine.state.scalar_regs.read(5) == 1
+        assert engine.stats.counters["instructions_retired"] == 7
 
     def test_rv32i_branch_loop_accumulates_sum(self) -> None:
         """Execute a decrementing loop and verify branch correctness."""
@@ -153,9 +152,9 @@ class Rv32iEngineTests(unittest.TestCase):
             0x0010_0073,
         ]
         engine = run_program(words, max_cycles=64)
-        self.assertTrue(engine.state.halted)
-        self.assertEqual(engine.state.exit_code, 15)
-        self.assertEqual(engine.state.scalar_regs.read(2), 15)
+        assert engine.state.halted
+        assert engine.state.exit_code == 15
+        assert engine.state.scalar_regs.read(2) == 15
 
     def test_rv32i_dram_store_and_load_round_trip_with_latency(self) -> None:
         """Store and reload a DRAM word and confirm the modeled long latency."""
@@ -169,12 +168,12 @@ class Rv32iEngineTests(unittest.TestCase):
             0x0010_0073,
         ]
         engine = run_program(words, max_cycles=300)
-        self.assertTrue(engine.state.halted)
-        self.assertEqual(engine.state.scalar_regs.read(3), 0x1234_5678)
-        self.assertEqual(engine.state.exit_code, 0x1234_5678)
-        self.assertEqual(engine.stats.counters["bytes_written"], 4)
-        self.assertEqual(engine.stats.counters["bytes_read"], 4)
-        self.assertGreaterEqual(engine.stats.counters["cycles"], 205)
+        assert engine.state.halted
+        assert engine.state.scalar_regs.read(3) == 0x1234_5678
+        assert engine.state.exit_code == 0x1234_5678
+        assert engine.stats.counters["bytes_written"] == 4
+        assert engine.stats.counters["bytes_read"] == 4
+        assert engine.stats.counters["cycles"] >= 205
 
     def test_rv32i_elf_loader_and_jalr_control_flow(self) -> None:
         """Decode a minimal ELF image and execute AUIPC plus JALR control flow."""
@@ -188,11 +187,7 @@ class Rv32iEngineTests(unittest.TestCase):
             0x0010_0073,
         ]
         engine = run_program(words, max_cycles=64, as_elf=True)
-        self.assertTrue(engine.state.halted)
-        self.assertEqual(engine.program.entry_point, 0x1000)
-        self.assertEqual(engine.state.exit_code, 0x100C)
-        self.assertEqual(engine.state.scalar_regs.read(5), 0x100C)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert engine.state.halted
+        assert engine.program.entry_point == 0x1000
+        assert engine.state.exit_code == 0x100C
+        assert engine.state.scalar_regs.read(5) == 0x100C

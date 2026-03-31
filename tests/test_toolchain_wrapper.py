@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
-import unittest
 from pathlib import Path
 
 from perf_modeling.config import AcceleratorConfig, DRAMConfig
@@ -12,7 +11,7 @@ from perf_modeling.decode import Decoder
 from perf_modeling.engine import SimulatorEngine
 
 
-class ToolchainWrapperTestCase(unittest.TestCase):
+class TestToolchainWrapper:
     """Verify the no-linker RV32I wrapper under `toolchains/`."""
 
     def test_assemble_to_elf_generates_simulator_consumable_binary(self) -> None:
@@ -54,9 +53,5 @@ class ToolchainWrapperTestCase(unittest.TestCase):
                 program=program,
             )
             engine.run(max_cycles=50)
-            self.assertTrue(engine.state.halted)
-            self.assertEqual(engine.state.exit_code, 5)
-
-
-if __name__ == "__main__":
-    unittest.main()
+            assert engine.state.halted
+            assert engine.state.exit_code == 5
