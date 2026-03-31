@@ -115,6 +115,12 @@ class SimulatorEngine:
         if any(not self.scoreboard.scalar_ready(index) for index in instruction.dest_regs()):
             self.stats.increment("stall_scalar_waw", 1)
             return
+        if any(not self.scoreboard.tensor_ready(index) for index in instruction.source_tensors()):
+            self.stats.increment("stall_tensor_dependency", 1)
+            return
+        if any(not self.scoreboard.tensor_ready(index) for index in instruction.dest_tensors()):
+            self.stats.increment("stall_tensor_waw", 1)
+            return
         if any(not self.scoreboard.csr_ready(address) for address in instruction.source_csrs()):
             self.stats.increment("stall_csr_dependency", 1)
             return
@@ -147,6 +153,8 @@ class SimulatorEngine:
         self.next_op_id += 1
         for register in instruction.dest_regs():
             self.scoreboard.mark_scalar_busy(register)
+        for tensor in instruction.dest_tensors():
+            self.scoreboard.mark_tensor_busy(tensor)
         for address in instruction.dest_csrs():
             self.scoreboard.mark_csr_busy(address)
         completion_callback = self._wrap_completion_callback(
@@ -203,6 +211,10 @@ class SimulatorEngine:
             return self.scalar_unit
         if unit_name == "load_store":
             return self.load_store_unit
+        if unit_name == "vector":
+            return self.vector_unit
+        if unit_name == "mxu":
+            return self.mxu_unit
         raise KeyError(f"Unsupported unit selection {unit_name!r}.")
 
     def _wrap_completion_callback(self, instruction: object, unit: object, plan: object) -> object:
@@ -219,6 +231,8 @@ class SimulatorEngine:
             unit.complete()
             for register in instruction.dest_regs():
                 self.scoreboard.release_scalar(register)
+            for tensor in instruction.dest_tensors():
+                self.scoreboard.release_tensor(tensor)
             for address in instruction.dest_csrs():
                 self.scoreboard.release_csr(address)
             self.state.retire_instruction()

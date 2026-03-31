@@ -52,8 +52,12 @@ class Scoreboard:
         return address not in self.busy_csrs
 
     def release_tensor(self, index: int) -> None:
-        """Release a tensor register once its producer completes."""
+        """Release one tensor register after its producer retires."""
         self.busy_tensors.discard(index)
+
+    def tensor_ready(self, index: int) -> bool:
+        """Return whether the tensor register may be accessed this cycle."""
+        return index not in self.busy_tensors
 
     def reserve_resource(self, name: str, until_cycle: int) -> None:
         """Reserve a named shared resource until the given cycle."""

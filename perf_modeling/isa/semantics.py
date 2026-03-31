@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import math
+import struct
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from perf_modeling.isa.instruction import ExecutionPlan, Instruction
+from perf_modeling.state.arch_state import TensorValue
 from perf_modeling.state.csr_file import CSR_MEPC
 from perf_modeling.timing.latency import (
     dram_read_latency,
     dram_write_latency,
+    mxu_latency,
     scalar_latency,
     scratchpad_latency,
+    vector_latency,
 )
 from perf_modeling.timing.resources import ResourceReservation
 from perf_modeling.traps import (
@@ -23,6 +28,7 @@ from perf_modeling.traps import (
     CAUSE_STORE_ADDRESS_MISALIGNED,
     MachineTrap,
 )
+from perf_modeling.types import StorageLocation, TensorDescriptor
 
 if TYPE_CHECKING:
     from perf_modeling.backend.torch_backend import TensorBackend
@@ -47,6 +53,22 @@ STORE_WIDTHS = {
     "sb": 1,
     "sh": 2,
     "sw": 4,
+}
+
+DTYPE_STRUCT_FORMATS = {
+    "int8": "b",
+    "int16": "h",
+    "int32": "i",
+    "float16": "e",
+    "float32": "f",
+}
+
+DTYPE_BYTE_WIDTHS = {
+    "int8": 1,
+    "int16": 2,
+    "int32": 4,
+    "float16": 2,
+    "float32": 4,
 }
 
 
@@ -136,6 +158,92 @@ def _csr_writes(instruction: Instruction) -> bool:
     if opcode in {"csrrsi", "csrrci"}:
         return _load_field(instruction, "imm") != 0
     return False
+
+
+def _tensor_shape(instruction: Instruction) -> tuple[int, ...]:
+    """Return the logical tensor shape carried by an instruction."""
+    shape = instruction.metadata.get("shape")
+    if not isinstance(shape, tuple):
+        raise ValueError(f"Instruction {instruction.opcode!r} is missing a tensor shape.")
+    return tuple(int(dimension) for dimension in shape)
+
+
+def _tensor_dtype(instruction: Instruction, key: str = "dtype") -> str:
+    """Return the tensor dtype carried by an instruction."""
+    dtype = instruction.metadata.get(key)
+    if not isinstance(dtype, str):
+        raise ValueError(f"Instruction {instruction.opcode!r} is missing dtype metadata {key!r}.")
+    return dtype
+
+
+def _tensor_num_elements(shape: tuple[int, ...]) -> int:
+    """Return the total element count in a tensor shape."""
+    elements = 1
+    for dimension in shape:
+        elements *= dimension
+    return elements
+
+
+def _tensor_nbytes(shape: tuple[int, ...], dtype: str) -> int:
+    """Return the logical storage size of one tensor payload."""
+    if dtype not in DTYPE_BYTE_WIDTHS:
+        raise ValueError(f"Tensor load/store dtype {dtype!r} is not supported.")
+    return _tensor_num_elements(shape) * DTYPE_BYTE_WIDTHS[dtype]
+
+
+def _materialize_tensor(
+    backend: "TensorBackend | None",
+    shape: tuple[int, ...],
+    dtype: str,
+    values: tuple[object, ...],
+) -> object:
+    """Create a backend tensor from flattened Python values."""
+    if backend is None:
+        raise ValueError("Tensor backend is required for tensor instructions.")
+    tensor = backend.zeros(shape, dtype)
+    flat = tensor.reshape(-1)
+    for index, value in enumerate(values):
+        flat[index] = value
+    return tensor
+
+
+def _load_tensor_payload(
+    backend: "TensorBackend | None",
+    raw: bytes,
+    shape: tuple[int, ...],
+    dtype: str,
+) -> object:
+    """Deserialize a tensor payload from memory bytes."""
+    if dtype not in DTYPE_STRUCT_FORMATS:
+        raise ValueError(f"Tensor load/store dtype {dtype!r} is not supported.")
+    count = _tensor_num_elements(shape)
+    values = struct.unpack("<" + DTYPE_STRUCT_FORMATS[dtype] * count, raw)
+    return _materialize_tensor(backend, shape, dtype, values)
+
+
+def _store_tensor_payload(value: object, dtype: str) -> bytes:
+    """Serialize a backend tensor into raw bytes."""
+    if dtype not in DTYPE_STRUCT_FORMATS:
+        raise ValueError(f"Tensor load/store dtype {dtype!r} is not supported.")
+    flattened = value.reshape(-1).tolist()
+    if dtype.startswith("float"):
+        normalized = [float(element) for element in flattened]
+    else:
+        normalized = [int(element) for element in flattened]
+    return struct.pack("<" + DTYPE_STRUCT_FORMATS[dtype] * len(normalized), *normalized)
+
+
+def _require_tensor(state: "ArchState", index: int, pc: int, name: str) -> TensorValue:
+    """Read one tensor register and raise an architectural trap when it is empty."""
+    tensor_value = state.tensor_regs.read(index)
+    if tensor_value is None:
+        raise MachineTrap(
+            cause=CAUSE_ILLEGAL_INSTRUCTION,
+            pc=pc,
+            tval=index,
+            reason=f"{name} tensor register t{index} is empty at 0x{pc:08x}.",
+        )
+    return tensor_value
 
 
 def _scalar_plan(
@@ -445,6 +553,203 @@ def _plan_store(
     )
 
 
+def _plan_tload(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    _scoreboard: "Scoreboard",
+    backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    pc = _load_field(instruction, "pc")
+    dest_tensor = instruction.dest_tensors()[0]
+    address = _load_field(instruction, "address")
+    shape = _tensor_shape(instruction)
+    dtype = _tensor_dtype(instruction)
+    num_bytes = _tensor_nbytes(shape, dtype)
+    memory, _local_address = state.resolve_memory(address, config)
+    if memory is state.scratchpad:
+        latency = scratchpad_latency(config.scratchpad, num_bytes)
+    else:
+        latency = dram_read_latency(config.dram, num_bytes)
+    completion_cycle = cycle + latency
+
+    def on_complete() -> None:
+        raw = state.read_memory(address, num_bytes, config)
+        payload = _load_tensor_payload(backend, raw, shape, dtype)
+        descriptor = TensorDescriptor(
+            shape=shape,
+            dtype=dtype,
+            location=StorageLocation.REGISTER,
+            name=f"t{dest_tensor}",
+        )
+        state.tensor_regs.write(dest_tensor, TensorValue(descriptor=descriptor, payload=payload))
+
+    return ExecutionPlan(
+        completion_cycle=completion_cycle,
+        resources=[
+            ResourceReservation(
+                resource_name="load_store",
+                start_cycle=cycle,
+                end_cycle=completion_cycle,
+            )
+        ],
+        on_complete=on_complete,
+        description=f"tload @ 0x{pc:08x}",
+        stats={"bytes_read": num_bytes},
+    )
+
+
+def _plan_tstore(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    _scoreboard: "Scoreboard",
+    _backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    pc = _load_field(instruction, "pc")
+    source_tensor = instruction.source_tensors()[0]
+    address = _load_field(instruction, "address")
+    tensor_value = _require_tensor(state, source_tensor, pc, "Source")
+    dtype = tensor_value.descriptor.dtype
+    raw = _store_tensor_payload(tensor_value.payload, dtype)
+    memory, _local_address = state.resolve_memory(address, config)
+    if memory is state.scratchpad:
+        latency = scratchpad_latency(config.scratchpad, len(raw))
+    else:
+        latency = dram_write_latency(config.dram, len(raw))
+    completion_cycle = cycle + latency
+
+    def on_complete() -> None:
+        state.write_memory(address, raw, config)
+
+    return ExecutionPlan(
+        completion_cycle=completion_cycle,
+        resources=[
+            ResourceReservation(
+                resource_name="load_store",
+                start_cycle=cycle,
+                end_cycle=completion_cycle,
+            )
+        ],
+        on_complete=on_complete,
+        description=f"tstore @ 0x{pc:08x}",
+        stats={"bytes_written": len(raw)},
+    )
+
+
+def _plan_vadd(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    _scoreboard: "Scoreboard",
+    backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    pc = _load_field(instruction, "pc")
+    lhs_index, rhs_index = instruction.source_tensors()
+    dest_index = instruction.dest_tensors()[0]
+    lhs = _require_tensor(state, lhs_index, pc, "Left")
+    rhs = _require_tensor(state, rhs_index, pc, "Right")
+    if lhs.descriptor.shape != rhs.descriptor.shape:
+        raise MachineTrap(
+            cause=CAUSE_ILLEGAL_INSTRUCTION,
+            pc=pc,
+            tval=0,
+            reason=f"Vector add shape mismatch at 0x{pc:08x}: {lhs.descriptor.shape} vs {rhs.descriptor.shape}.",
+        )
+    out_dtype = _tensor_dtype(instruction, "out_dtype")
+    elements = _tensor_num_elements(lhs.descriptor.shape)
+    completion_cycle = cycle + vector_latency(config.core.vector, elements)
+
+    def on_complete() -> None:
+        if backend is None:
+            raise ValueError("Tensor backend is required for vector instructions.")
+        payload = backend.elementwise("add", (lhs.payload, rhs.payload), out_dtype)
+        descriptor = TensorDescriptor(
+            shape=lhs.descriptor.shape,
+            dtype=out_dtype,
+            location=StorageLocation.REGISTER,
+            name=f"t{dest_index}",
+        )
+        state.tensor_regs.write(dest_index, TensorValue(descriptor=descriptor, payload=payload))
+
+    return ExecutionPlan(
+        completion_cycle=completion_cycle,
+        resources=[
+            ResourceReservation(
+                resource_name="vector",
+                start_cycle=cycle,
+                end_cycle=completion_cycle,
+            )
+        ],
+        on_complete=on_complete,
+        description=f"vadd @ 0x{pc:08x}",
+    )
+
+
+def _plan_matmul(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    _scoreboard: "Scoreboard",
+    backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    pc = _load_field(instruction, "pc")
+    lhs_index, rhs_index = instruction.source_tensors()
+    dest_index = instruction.dest_tensors()[0]
+    lhs = _require_tensor(state, lhs_index, pc, "Left")
+    rhs = _require_tensor(state, rhs_index, pc, "Right")
+    if len(lhs.descriptor.shape) != 2 or len(rhs.descriptor.shape) != 2:
+        raise MachineTrap(
+            cause=CAUSE_ILLEGAL_INSTRUCTION,
+            pc=pc,
+            tval=0,
+            reason=f"MXU matmul expects rank-2 tensors at 0x{pc:08x}.",
+        )
+    lhs_rows, lhs_cols = lhs.descriptor.shape
+    rhs_rows, rhs_cols = rhs.descriptor.shape
+    if lhs_cols != rhs_rows:
+        raise MachineTrap(
+            cause=CAUSE_ILLEGAL_INSTRUCTION,
+            pc=pc,
+            tval=0,
+            reason=f"MXU matmul shape mismatch at 0x{pc:08x}: {lhs.descriptor.shape} x {rhs.descriptor.shape}.",
+        )
+    out_dtype = _tensor_dtype(instruction, "out_dtype")
+    acc_dtype = _tensor_dtype(instruction, "acc_dtype")
+    result_elements = lhs_rows * rhs_cols
+    tile_capacity = max(1, config.core.mxu.rows * config.core.mxu.cols)
+    completion_cycle = cycle + mxu_latency(config.core.mxu, math.ceil(result_elements / tile_capacity))
+
+    def on_complete() -> None:
+        if backend is None:
+            raise ValueError("Tensor backend is required for MXU instructions.")
+        payload = backend.matmul(lhs.payload, rhs.payload, acc_dtype, out_dtype)
+        descriptor = TensorDescriptor(
+            shape=(lhs_rows, rhs_cols),
+            dtype=out_dtype,
+            location=StorageLocation.REGISTER,
+            name=f"t{dest_index}",
+        )
+        state.tensor_regs.write(dest_index, TensorValue(descriptor=descriptor, payload=payload))
+
+    return ExecutionPlan(
+        completion_cycle=completion_cycle,
+        resources=[
+            ResourceReservation(
+                resource_name="mxu",
+                start_cycle=cycle,
+                end_cycle=completion_cycle,
+            )
+        ],
+        on_complete=on_complete,
+        description=f"matmul @ 0x{pc:08x}",
+    )
+
+
 def _plan_fence(
     instruction: Instruction,
     cycle: int,
@@ -594,6 +899,10 @@ def build_rv32i_semantics_registry() -> SemanticsRegistry:
         registry.register(opcode, _plan_load)
     for opcode in STORE_WIDTHS:
         registry.register(opcode, _plan_store)
+    registry.register("tload", _plan_tload)
+    registry.register("tstore", _plan_tstore)
+    registry.register("vadd", _plan_vadd)
+    registry.register("matmul", _plan_matmul)
     registry.register("fence", _plan_fence)
     for opcode in ("csrrw", "csrrs", "csrrc", "csrrwi", "csrrsi", "csrrci"):
         registry.register(opcode, _plan_csr)

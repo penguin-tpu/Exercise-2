@@ -1,0 +1,2 @@
+-[] move the user-level entry scripts to under ./scripts/
+-[] properly set up RISC-V toolchain under ./toolchains/, compile programs with them, and generate ELF files that are consumed by the perf model.

@@ -49,10 +49,24 @@ class Instruction:
         """Return the CSR addresses written by this instruction."""
         return tuple(int(address) for address in self.metadata.get("dest_csrs", ()))
 
+    def source_tensors(self) -> tuple[int, ...]:
+        """Return the tensor register indexes read by this instruction."""
+        return tuple(int(index) for index in self.metadata.get("source_tensors", ()))
+
+    def dest_tensors(self) -> tuple[int, ...]:
+        """Return the tensor register indexes written by this instruction."""
+        return tuple(int(index) for index in self.metadata.get("dest_tensors", ()))
+
     def unit_name(self) -> str:
         """Return the execution unit expected to service this instruction."""
         if self.opcode in {"lb", "lh", "lw", "lbu", "lhu", "sb", "sh", "sw"}:
             return "load_store"
+        if self.opcode in {"tload", "tstore"}:
+            return "load_store"
+        if self.opcode in {"vadd"}:
+            return "vector"
+        if self.opcode in {"matmul"}:
+            return "mxu"
         return "scalar"
 
     def validate(self, state: "ArchState", config: "AcceleratorConfig") -> None:
