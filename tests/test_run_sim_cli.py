@@ -622,6 +622,68 @@ class TestRunSimCLI:
         assert "config name=tiny_debug description=" in result.stdout
         assert "program=" not in result.stdout
 
+    def test_run_sim_sweeps_one_program_across_named_configs(self) -> None:
+        """The CLI should run one workload across multiple named configs and export a sweep JSON summary."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            sweep_path = temp_path / "out" / "sweep.json"
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    "--sweep-config",
+                    "baseline",
+                    "--sweep-config",
+                    "tiny_debug",
+                    "--sweep-json",
+                    str(sweep_path),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            sweep_payload = json.loads(sweep_path.read_text())
+
+        assert "sweep program=builtin-smoke configs=2" in result.stdout
+        assert "sweep config=baseline" in result.stdout
+        assert "sweep config=tiny_debug" in result.stdout
+        assert "\nprogram=" not in result.stdout
+        assert sweep_payload["program"] == "builtin-smoke"
+        assert [entry["config"] for entry in sweep_payload["results"]] == ["baseline", "tiny_debug"]
+        assert sweep_payload["results"][0]["config_snapshot"]["core"]["vector"]["lanes"] == 16
+        assert sweep_payload["results"][1]["config_snapshot"]["core"]["vector"]["lanes"] == 4
+        assert sweep_payload["results"][0]["cycles"] < sweep_payload["results"][1]["cycles"]
+        assert sweep_payload["results"][0]["summary"]["pipeline"]["retired"] == 2
+
+    def test_run_sim_rejects_single_run_reports_during_config_sweep(self) -> None:
+        """The CLI should reject ambiguous single-run report flags during multi-config sweep mode."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                str(script),
+                "--sweep-config",
+                "baseline",
+                "--report",
+                "summary",
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+            cwd=repo_root,
+        )
+
+        assert result.returncode != 0
+        assert "--report is not supported together with --sweep-config" in result.stderr
+
     def test_run_sim_prints_filtered_stats_and_trace_tail(self) -> None:
         """The CLI should print filtered stat families and a bounded trace tail on request."""
         repo_root = Path(__file__).resolve().parent.parent

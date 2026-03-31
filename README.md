@@ -64,6 +64,8 @@ Useful common options:
 - `--max-cycles 100000`
 - `--config baseline`
 - `--list-configs`
+- `--sweep-config baseline --sweep-config tiny_debug`
+- `--sweep-json sweep.json`
 - `--output-dir out`
 - `--stats-json stats.json`
 - `--trace-json trace.json`
@@ -91,6 +93,15 @@ List the packaged hardware presets:
 
 ```bash
 uv run python scripts/run_sim.py --list-configs
+```
+
+Sweep one workload across multiple named presets:
+
+```bash
+uv run python scripts/run_sim.py tests/workload/scalar_int_matmul.S \
+  --sweep-config baseline \
+  --sweep-config tiny_debug \
+  --sweep-json sweep.json
 ```
 
 ## Reports

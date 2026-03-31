@@ -29,8 +29,8 @@ from perf_modeling.decode import Decoder
 from perf_modeling.reporting import build_run_summary, emit_config_report, emit_report
 
 
-def parse_args() -> argparse.Namespace:
-    """Parse command-line arguments."""
+def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser for the simulator entrypoint."""
     parser = argparse.ArgumentParser(description="Execute a bare-metal RV32I binary in the simulator.")
     parser.add_argument(
         "program",
@@ -60,6 +60,19 @@ def parse_args() -> argparse.Namespace:
         "--list-configs",
         action="store_true",
         help="Print the available named accelerator configuration presets and exit.",
+    )
+    parser.add_argument(
+        "--sweep-config",
+        action="append",
+        choices=available_config_names(),
+        default=[],
+        help="Run the same program across multiple named configs. May be repeated.",
+    )
+    parser.add_argument(
+        "--sweep-json",
+        type=str,
+        default=None,
+        help="Optional path for a JSON export of multi-config sweep results, or '-' to write JSON to stdout.",
     )
     parser.add_argument(
         "--dram-load",
@@ -184,7 +197,41 @@ def parse_args() -> argparse.Namespace:
         default="out",
         help="Base directory used for relative artifact outputs.",
     )
-    return parser.parse_args()
+    return parser
+
+
+def parse_args() -> tuple[argparse.ArgumentParser, argparse.Namespace]:
+    """Parse command-line arguments."""
+    parser = build_parser()
+    return parser, parser.parse_args()
+
+
+def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Validate combinations of CLI arguments before starting simulation."""
+    if args.sweep_json is not None and not args.sweep_config:
+        parser.error("--sweep-json requires at least one --sweep-config entry.")
+    if not args.sweep_config:
+        return
+    if args.stats_json is not None:
+        parser.error("--stats-json is not supported together with --sweep-config.")
+    if args.stats_csv is not None:
+        parser.error("--stats-csv is not supported together with --sweep-config.")
+    if args.trace_json is not None:
+        parser.error("--trace-json is not supported together with --sweep-config.")
+    if args.trace_csv is not None:
+        parser.error("--trace-csv is not supported together with --sweep-config.")
+    if args.manifest_json is not None:
+        parser.error("--manifest-json is not supported together with --sweep-config.")
+    if args.scratchpad_dump is not None:
+        parser.error("--scratchpad-dump is not supported together with --sweep-config.")
+    if args.dram_dump is not None:
+        parser.error("--dram-dump is not supported together with --sweep-config.")
+    if args.print_stats_prefix:
+        parser.error("--print-stats-prefix is not supported together with --sweep-config.")
+    if args.print_trace_limit > 0:
+        parser.error("--print-trace-limit is not supported together with --sweep-config.")
+    if args.report:
+        parser.error("--report is not supported together with --sweep-config.")
 
 
 def build_default_program() -> bytes:
@@ -198,7 +245,8 @@ def build_default_program() -> bytes:
 
 def main() -> None:
     """Load and run one RV32I program image."""
-    args = parse_args()
+    parser, args = parse_args()
+    validate_args(args, parser)
     if args.list_configs:
         for config_name in available_config_names():
             print(f"config name={config_name} description={describe_named_config(config_name)}")
@@ -209,20 +257,59 @@ def main() -> None:
         program = decoder.decode_bytes(blob, base_address=args.base_address, name="builtin-smoke")
     else:
         program = decode_program_from_path(args.program, args.base_address, decoder, REPO_ROOT)
-    engine = SimulatorEngine(config=get_named_config(args.config), program=program)
-    config_snapshot = snapshot_config(engine.config)
     manifest_dram_loads: list[tuple[int, Path]] = []
     manifest_scratchpad_loads: list[tuple[int, Path]] = []
     if args.memory_loads_json is not None:
         manifest_dram_loads, manifest_scratchpad_loads = load_memory_manifest(args.memory_loads_json)
-    for address, path in manifest_dram_loads:
-        engine.state.dram.load_image(address, path.read_bytes())
-    for offset, path in manifest_scratchpad_loads:
-        engine.state.scratchpad.load_image(offset, path.read_bytes())
-    for address, path in args.dram_load:
-        engine.state.dram.load_image(address, path.read_bytes())
-    for offset, path in args.scratchpad_load:
-        engine.state.scratchpad.load_image(offset, path.read_bytes())
+    dram_images = [(address, path.read_bytes()) for address, path in manifest_dram_loads]
+    dram_images.extend((address, path.read_bytes()) for address, path in args.dram_load)
+    scratchpad_images = [(offset, path.read_bytes()) for offset, path in manifest_scratchpad_loads]
+    scratchpad_images.extend((offset, path.read_bytes()) for offset, path in args.scratchpad_load)
+    if args.sweep_config:
+        sweep_results: list[dict[str, object]] = []
+        print(f"sweep program={program.name} configs={len(args.sweep_config)}")
+        for config_name in args.sweep_config:
+            sweep_engine = SimulatorEngine(config=get_named_config(config_name), program=program)
+            sweep_config_snapshot = snapshot_config(sweep_engine.config)
+            for address, payload in dram_images:
+                sweep_engine.state.dram.load_image(address, payload)
+            for offset, payload in scratchpad_images:
+                sweep_engine.state.scratchpad.load_image(offset, payload)
+            sweep_stats = sweep_engine.run(max_cycles=args.max_cycles).snapshot()
+            sweep_summary = build_run_summary(sweep_stats)
+            print(
+                f"sweep config={config_name} cycles={sweep_stats.get('cycles', 0)} retired={sweep_stats.get('instructions_retired', 0)} halted={sweep_engine.state.halted} exit_code={sweep_engine.state.exit_code} busiest_unit={sweep_summary['busiest_unit']['name']}"
+            )
+            sweep_results.append(
+                {
+                    "config": config_name,
+                    "config_snapshot": sweep_config_snapshot,
+                    "halted": sweep_engine.state.halted,
+                    "exit_code": sweep_engine.state.exit_code,
+                    "trap": sweep_engine.state.trap_reason,
+                    "cycles": sweep_stats.get("cycles", 0),
+                    "summary": sweep_summary,
+                    "stats": sweep_stats,
+                }
+            )
+        if args.sweep_json is not None:
+            sweep_payload = {
+                "program": program.name,
+                "results": sweep_results,
+            }
+            serialized = json.dumps(sweep_payload, indent=2, sort_keys=True)
+            if args.sweep_json == "-":
+                print(serialized)
+            else:
+                sweep_json_path = prepare_output_path(args.sweep_json, args.output_dir)
+                sweep_json_path.write_text(serialized + "\n")
+        return
+    engine = SimulatorEngine(config=get_named_config(args.config), program=program)
+    config_snapshot = snapshot_config(engine.config)
+    for address, payload in dram_images:
+        engine.state.dram.load_image(address, payload)
+    for offset, payload in scratchpad_images:
+        engine.state.scratchpad.load_image(offset, payload)
     stats = engine.run(max_cycles=args.max_cycles).snapshot()
     artifact_outputs: dict[str, str] = {}
     print(f"program={program.name}")
