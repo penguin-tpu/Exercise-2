@@ -11,6 +11,7 @@ from perf_modeling.isa.instruction import ExecutionPlan, Instruction
 from perf_modeling.state.arch_state import TensorValue
 from perf_modeling.state.csr_file import CSR_MEPC
 from perf_modeling.timing.latency import (
+    dma_latency,
     dram_read_latency,
     dram_write_latency,
     mxu_latency,
@@ -639,6 +640,39 @@ def _plan_tstore(
     )
 
 
+def _plan_dma_copy(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    _scoreboard: "Scoreboard",
+    _backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    pc = _load_field(instruction, "pc")
+    source_address = _load_field(instruction, "source_address")
+    dest_address = _load_field(instruction, "dest_address")
+    num_bytes = _load_field(instruction, "num_bytes")
+    completion_cycle = cycle + dma_latency(config.core.dma, num_bytes)
+
+    def on_complete() -> None:
+        payload = state.read_memory(source_address, num_bytes, config)
+        state.write_memory(dest_address, payload, config)
+
+    return ExecutionPlan(
+        completion_cycle=completion_cycle,
+        resources=[
+            ResourceReservation(
+                resource_name="dma",
+                start_cycle=cycle,
+                end_cycle=completion_cycle,
+            )
+        ],
+        on_complete=on_complete,
+        description=f"dma_copy @ 0x{pc:08x}",
+        stats={"bytes_read": num_bytes, "bytes_written": num_bytes},
+    )
+
+
 def _plan_vadd(
     instruction: Instruction,
     cycle: int,
@@ -899,6 +933,7 @@ def build_rv32i_semantics_registry() -> SemanticsRegistry:
         registry.register(opcode, _plan_load)
     for opcode in STORE_WIDTHS:
         registry.register(opcode, _plan_store)
+    registry.register("dma_copy", _plan_dma_copy)
     registry.register("tload", _plan_tload)
     registry.register("tstore", _plan_tstore)
     registry.register("vadd", _plan_vadd)

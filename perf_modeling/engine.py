@@ -211,6 +211,8 @@ class SimulatorEngine:
             return self.scalar_unit
         if unit_name == "load_store":
             return self.load_store_unit
+        if unit_name == "dma":
+            return self.dma_unit
         if unit_name == "vector":
             return self.vector_unit
         if unit_name == "mxu":

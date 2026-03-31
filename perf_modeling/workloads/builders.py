@@ -51,6 +51,22 @@ class ProgramBuilder:
             },
         )
 
+    def emit_dma_copy(
+        self,
+        source_address: int,
+        dest_address: int,
+        num_bytes: int,
+    ) -> "ProgramBuilder":
+        """Append an asynchronous DMA copy between two memory addresses."""
+        return self.emit(
+            "dma_copy",
+            metadata={
+                "source_address": source_address,
+                "dest_address": dest_address,
+                "num_bytes": num_bytes,
+            },
+        )
+
     def emit_tensor_store(self, source_tensor: int, address: int) -> "ProgramBuilder":
         """Append a tensor store from one tensor register into memory."""
         return self.emit(
@@ -122,6 +138,19 @@ class ProgramBuilder:
         )
 
     def build_dma_smoke_test(self, problem: KernelProblem) -> Program:
-        """Construct a placeholder DMA-oriented microbenchmark program."""
-        _ = problem
-        raise NotImplementedError("DMA smoke-test generation has not been implemented yet.")
+        """Construct a basic DMA copy plus fence microbenchmark program."""
+        output_elements = 1
+        for dimension in problem.output_shape:
+            output_elements *= dimension
+        payload_bytes = max(4, output_elements * 4)
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_dma_copy(
+                source_address=0x300,
+                dest_address=0x2000_0000,
+                num_bytes=payload_bytes,
+            )
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-dma-smoke")
+        )

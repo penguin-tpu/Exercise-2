@@ -63,6 +63,8 @@ class Instruction:
             return "load_store"
         if self.opcode in {"tload", "tstore"}:
             return "load_store"
+        if self.opcode in {"dma_copy"}:
+            return "dma"
         if self.opcode in {"vadd"}:
             return "vector"
         if self.opcode in {"matmul"}:
