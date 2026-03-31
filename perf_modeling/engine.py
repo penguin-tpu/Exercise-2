@@ -94,7 +94,7 @@ class SimulatorEngine:
         for event in self.event_queue.pop_ready(self.cycle):
             event.fire()
             self.state.complete_op(event.op_id)
-            self.trace.append(self.cycle, "complete", event.description or f"op {event.op_id}")
+            self._append_trace("complete", event.description or f"op {event.op_id}")
 
     def update_resources(self) -> None:
         """Advance unit-local timekeeping and refresh scoreboard state."""
@@ -147,7 +147,7 @@ class SimulatorEngine:
             return
         except Exception as exc:
             self.state.trap(str(exc))
-            self.trace.append(self.cycle, "trap", str(exc))
+            self._append_trace("trap", str(exc))
             return
         shared_reservations = self._shared_resource_reservations(plan.resources)
         for reservation in shared_reservations:
@@ -199,11 +199,7 @@ class SimulatorEngine:
             self.state.next_pc(self.config.machine.instruction_bytes)
         self.stats.increment("instructions_issued", 1)
         self.stats.record_issue(unit.name)
-        self.trace.append(
-            self.cycle,
-            "issue",
-            plan.description or f"{instruction.opcode} @ 0x{self.state.pc:08x}",
-        )
+        self._append_trace("issue", plan.description or f"{instruction.opcode} @ 0x{self.state.pc:08x}")
 
     def sample_stats(self) -> None:
         """Update cycle-level statistics after issue and completion work."""
@@ -215,7 +211,17 @@ class SimulatorEngine:
     def _record_stall(self, counter_name: str, message: str) -> None:
         """Increment one stall counter and append a matching trace record."""
         self.stats.increment(counter_name, 1)
-        self.trace.append(self.cycle, "stall", message)
+        self._append_trace("stall", message)
+
+    def _append_trace(self, kind: str, message: str) -> None:
+        """Append one trace record when the current trace policy allows it."""
+        if not self.config.timing.enable_tracing:
+            return
+        if kind == "stall" and not self.config.trace.keep_cycle_trace:
+            return
+        if kind in {"issue", "complete", "trap"} and not self.config.trace.keep_event_trace:
+            return
+        self.trace.append(self.cycle, kind, message)
 
     def _shared_resource_reservations(self, reservations: list[object]) -> list[object]:
         """Return the reservations that model cross-unit shared resources."""
@@ -263,7 +269,7 @@ class SimulatorEngine:
                 self._deliver_trap(trap)
             except Exception as exc:
                 self.state.trap(str(exc))
-                self.trace.append(self.cycle, "trap", str(exc))
+                self._append_trace("trap", str(exc))
             unit.complete()
             for register in instruction.dest_regs():
                 self.scoreboard.release_scalar(register)
@@ -281,7 +287,7 @@ class SimulatorEngine:
         if self.config.machine.enable_trap_handlers:
             target = self.state.enter_trap(trap, self.cycle)
             if self.program.contains_pc(target):
-                self.trace.append(self.cycle, "trap", trap.reason)
+                self._append_trace("trap", trap.reason)
                 return
         self.state.trap(trap.reason)
-        self.trace.append(self.cycle, "trap", trap.reason)
+        self._append_trace("trap", trap.reason)
