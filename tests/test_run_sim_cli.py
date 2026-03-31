@@ -206,6 +206,56 @@ class TestRunSimCLI:
         assert "program=dram_store.S" in result.stdout
         assert payload == b"\x78\x56\x34\x12"
 
+    def test_run_sim_preloads_dram_from_image_file(self) -> None:
+        """The CLI should preload DRAM bytes before execution via `--dram-load`."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            image_path = temp_path / "input.bin"
+            source = temp_path / "dram_load.S"
+            dump_path = temp_path / "out" / "roundtrip.bin"
+            image_path.write_bytes(b"\x78\x56\x34\x12")
+            source.write_text(
+                "\n".join(
+                    [
+                        ".section .text",
+                        ".globl _start",
+                        "_start:",
+                        "  addi t0, x0, 384",
+                        "  lw a0, 0(t0)",
+                        "  sw a0, 4(t0)",
+                        "  ebreak",
+                        "",
+                    ]
+                )
+            )
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    str(source),
+                    "--dram-load",
+                    f"0x180:{image_path}",
+                    "--dram-dump",
+                    str(dump_path),
+                    "--dram-dump-offset",
+                    "388",
+                    "--dram-dump-size",
+                    "4",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            payload = dump_path.read_bytes()
+
+        assert "program=dram_load.S" in result.stdout
+        assert payload == b"\x78\x56\x34\x12"
+
     def test_run_sim_accepts_assembly_input_directly(self) -> None:
         """The CLI should assemble one source file transiently when passed assembly input."""
         repo_root = Path(__file__).resolve().parent.parent

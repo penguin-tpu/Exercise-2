@@ -51,6 +51,14 @@ def _matches_report_filter(value: str, report_match: str | None) -> bool:
     return report_match.lower() in value.lower()
 
 
+def _parse_image_load_spec(value: str) -> tuple[int, Path]:
+    """Parse one CLI memory-image load specification of the form `ADDRESS:PATH`."""
+    if ":" not in value:
+        raise argparse.ArgumentTypeError("Expected memory load spec in the form ADDRESS:PATH.")
+    address_text, path_text = value.split(":", 1)
+    return int(address_text, 0), Path(path_text)
+
+
 def _path_is_under_directory(path: Path, directory: Path) -> bool:
     """Return whether one relative path already begins under the selected output directory."""
     if len(path.parts) < len(directory.parts):
@@ -385,6 +393,13 @@ def parse_args() -> argparse.Namespace:
         help="Maximum number of cycles to simulate before stopping.",
     )
     parser.add_argument(
+        "--dram-load",
+        action="append",
+        type=_parse_image_load_spec,
+        default=[],
+        help="Repeatable DRAM preload in the form ADDRESS:PATH.",
+    )
+    parser.add_argument(
         "--stats-json",
         type=str,
         default=None,
@@ -509,6 +524,8 @@ def main() -> None:
     else:
         program = _decode_program_from_path(args.program, args.base_address, decoder)
     engine = SimulatorEngine(config=AcceleratorConfig(), program=program)
+    for address, path in args.dram_load:
+        engine.state.dram.load_image(address, path.read_bytes())
     stats = engine.run(max_cycles=args.max_cycles).snapshot()
     artifact_outputs: dict[str, str] = {}
     print(f"program={program.name}")
