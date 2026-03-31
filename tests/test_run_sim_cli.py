@@ -307,6 +307,75 @@ class TestRunSimCLI:
         assert "program=scratchpad_load.S" in result.stdout
         assert payload == b"\xef\xbe\xad\xde"
 
+    def test_run_sim_preloads_memory_from_json_manifest(self) -> None:
+        """The CLI should accept one JSON manifest that seeds both DRAM and scratchpad."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            dram_image_path = temp_path / "dram.bin"
+            scratchpad_image_path = temp_path / "scratchpad.bin"
+            manifest_path = temp_path / "loads.json"
+            source = temp_path / "memory_manifest.S"
+            dump_path = temp_path / "out" / "roundtrip.bin"
+            dram_image_path.write_bytes(b"\x78\x56\x34\x12")
+            scratchpad_image_path.write_bytes(b"\xef\xbe\xad\xde")
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "dram": [
+                            {"address": "0x180", "path": dram_image_path.name},
+                        ],
+                        "scratchpad": [
+                            {"offset": "0x0", "path": scratchpad_image_path.name},
+                        ],
+                    }
+                )
+            )
+            source.write_text(
+                "\n".join(
+                    [
+                        ".section .text",
+                        ".globl _start",
+                        "_start:",
+                        "  lui t0, 0x20000",
+                        "  lw a0, 0(t0)",
+                        "  addi t1, x0, 128",
+                        "  sw a0, 0(t1)",
+                        "  addi t2, x0, 384",
+                        "  lw a1, 0(t2)",
+                        "  sw a1, 4(t1)",
+                        "  ebreak",
+                        "",
+                    ]
+                )
+            )
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    str(source),
+                    "--memory-loads-json",
+                    str(manifest_path),
+                    "--dram-dump",
+                    str(dump_path),
+                    "--dram-dump-offset",
+                    "128",
+                    "--dram-dump-size",
+                    "8",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            payload = dump_path.read_bytes()
+
+        assert "program=memory_manifest.S" in result.stdout
+        assert payload == b"\xef\xbe\xad\xde\x78\x56\x34\x12"
+
     def test_run_sim_accepts_assembly_input_directly(self) -> None:
         """The CLI should assemble one source file transiently when passed assembly input."""
         repo_root = Path(__file__).resolve().parent.parent

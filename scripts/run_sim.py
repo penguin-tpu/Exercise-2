@@ -59,6 +59,42 @@ def _parse_image_load_spec(value: str) -> tuple[int, Path]:
     return int(address_text, 0), Path(path_text)
 
 
+def _parse_int_like(value: object, field_name: str) -> int:
+    """Parse one manifest integer field from either numeric or string JSON input."""
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return int(value, 0)
+    raise ValueError(f"Expected integer-like value for {field_name}.")
+
+
+def _load_memory_manifest(manifest_path: Path) -> tuple[list[tuple[int, Path]], list[tuple[int, Path]]]:
+    """Load DRAM and scratchpad preload specs from one JSON manifest file."""
+    payload = json.loads(manifest_path.read_text())
+    if not isinstance(payload, dict):
+        raise ValueError("Memory load manifest must contain a top-level JSON object.")
+    manifest_root = manifest_path.parent
+    dram_loads: list[tuple[int, Path]] = []
+    for entry in payload.get("dram", []):
+        if not isinstance(entry, dict):
+            raise ValueError("Each DRAM manifest entry must be a JSON object.")
+        address = _parse_int_like(entry.get("address"), "dram.address")
+        path = Path(entry.get("path"))
+        if not path.is_absolute():
+            path = manifest_root / path
+        dram_loads.append((address, path))
+    scratchpad_loads: list[tuple[int, Path]] = []
+    for entry in payload.get("scratchpad", []):
+        if not isinstance(entry, dict):
+            raise ValueError("Each scratchpad manifest entry must be a JSON object.")
+        offset = _parse_int_like(entry.get("offset"), "scratchpad.offset")
+        path = Path(entry.get("path"))
+        if not path.is_absolute():
+            path = manifest_root / path
+        scratchpad_loads.append((offset, path))
+    return dram_loads, scratchpad_loads
+
+
 def _path_is_under_directory(path: Path, directory: Path) -> bool:
     """Return whether one relative path already begins under the selected output directory."""
     if len(path.parts) < len(directory.parts):
@@ -407,6 +443,12 @@ def parse_args() -> argparse.Namespace:
         help="Repeatable scratchpad preload in the form OFFSET:PATH.",
     )
     parser.add_argument(
+        "--memory-loads-json",
+        type=Path,
+        default=None,
+        help="Optional JSON manifest describing DRAM and scratchpad preloads.",
+    )
+    parser.add_argument(
         "--stats-json",
         type=str,
         default=None,
@@ -531,6 +573,14 @@ def main() -> None:
     else:
         program = _decode_program_from_path(args.program, args.base_address, decoder)
     engine = SimulatorEngine(config=AcceleratorConfig(), program=program)
+    manifest_dram_loads: list[tuple[int, Path]] = []
+    manifest_scratchpad_loads: list[tuple[int, Path]] = []
+    if args.memory_loads_json is not None:
+        manifest_dram_loads, manifest_scratchpad_loads = _load_memory_manifest(args.memory_loads_json)
+    for address, path in manifest_dram_loads:
+        engine.state.dram.load_image(address, path.read_bytes())
+    for offset, path in manifest_scratchpad_loads:
+        engine.state.scratchpad.load_image(offset, path.read_bytes())
     for address, path in args.dram_load:
         engine.state.dram.load_image(address, path.read_bytes())
     for offset, path in args.scratchpad_load:
