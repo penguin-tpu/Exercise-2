@@ -324,6 +324,12 @@ def parse_args() -> argparse.Namespace:
         help="Optional path for a JSON trace export, or '-' to write JSON to stdout.",
     )
     parser.add_argument(
+        "--trace-csv",
+        type=str,
+        default=None,
+        help="Optional path for a CSV trace export, or '-' to write CSV to stdout.",
+    )
+    parser.add_argument(
         "--print-stats-prefix",
         action="append",
         default=[],
@@ -434,6 +440,16 @@ def main() -> None:
             print(serialized)
         else:
             Path(args.trace_json).write_text(serialized + "\n")
+    if args.trace_csv is not None:
+        rows = [("cycle", "kind", "message")]
+        rows.extend((str(record.cycle), record.kind, record.message) for record in engine.trace.records)
+        if args.trace_csv == "-":
+            writer = csv.writer(sys.stdout)
+            writer.writerows(rows)
+        else:
+            with Path(args.trace_csv).open("w", newline="") as handle:
+                writer = csv.writer(handle)
+                writer.writerows(rows)
 
 
 if __name__ == "__main__":

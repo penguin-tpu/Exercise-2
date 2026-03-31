@@ -75,6 +75,33 @@ class TestRunSimCLI:
         assert ["instructions_retired", "2"] in rows
         assert ["latency.addi.samples", "1"] in rows
 
+    def test_run_sim_writes_trace_csv(self) -> None:
+        """The CLI should emit a CSV export for retained trace records on request."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            trace_csv_path = temp_path / "trace.csv"
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(script),
+                    "--trace-csv",
+                    str(trace_csv_path),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            with trace_csv_path.open(newline="") as handle:
+                rows = list(csv.reader(handle))
+
+        assert "program=builtin-smoke" in result.stdout
+        assert rows[0] == ["cycle", "kind", "message"]
+        assert any(row[1] == "issue" for row in rows[1:])
+        assert any(row[1] == "complete" for row in rows[1:])
+
     def test_run_sim_prints_filtered_stats_and_trace_tail(self) -> None:
         """The CLI should print filtered stat families and a bounded trace tail on request."""
         repo_root = Path(__file__).resolve().parent.parent
