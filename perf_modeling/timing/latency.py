@@ -34,8 +34,14 @@ def scalar_latency(config: ScalarUnitConfig) -> int:
     return max(1, config.pipeline_depth)
 
 
+def scratchpad_access_latency(config: ScratchpadConfig, banks_touched: int, num_bytes: int) -> int:
+    """Estimate scratchpad access latency for a payload size and bank footprint."""
+    bytes_per_cycle = max(1, min(config.num_banks, max(1, banks_touched)) * config.bank_width_bytes)
+    return max(1, math.ceil(num_bytes / bytes_per_cycle))
+
+
 def scratchpad_latency(config: ScratchpadConfig, num_bytes: int) -> int:
-    """Estimate scratchpad access latency for a payload size."""
+    """Estimate scratchpad access latency when the full banked bandwidth is available."""
     bytes_per_cycle = max(1, config.num_banks * config.bank_width_bytes)
     return max(1, math.ceil(num_bytes / bytes_per_cycle))
 

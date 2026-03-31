@@ -16,7 +16,7 @@ from perf_modeling.timing.latency import (
     dram_write_latency,
     mxu_latency,
     scalar_latency,
-    scratchpad_latency,
+    scratchpad_access_latency,
     vector_latency,
 )
 from perf_modeling.timing.resources import ResourceReservation
@@ -263,6 +263,17 @@ def _scratchpad_bank_reservations(
         )
         for bank_index in state.scratchpad.bank_indices_for_range(local_address, size_bytes)
     ]
+
+
+def _scratchpad_latency(
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    local_address: int,
+    size_bytes: int,
+) -> int:
+    """Estimate scratchpad latency using the banks touched by one access."""
+    banks_touched = len(state.scratchpad.bank_indices_for_range(local_address, size_bytes))
+    return scratchpad_access_latency(config.scratchpad, banks_touched, size_bytes)
 
 
 def _memory_access_reservations(
@@ -524,7 +535,7 @@ def _plan_load(
     _check_alignment(address, width, pc, config, "load")
     memory, local_address = state.resolve_memory(address, config)
     if memory is state.scratchpad:
-        latency = scratchpad_latency(config.scratchpad, width)
+        latency = _scratchpad_latency(state, config, local_address, width)
     else:
         latency = dram_read_latency(config.dram, width)
     completion_cycle = cycle + latency
@@ -572,7 +583,7 @@ def _plan_store(
     _check_alignment(address, width, pc, config, "store")
     memory, local_address = state.resolve_memory(address, config)
     if memory is state.scratchpad:
-        latency = scratchpad_latency(config.scratchpad, width)
+        latency = _scratchpad_latency(state, config, local_address, width)
     else:
         latency = dram_write_latency(config.dram, width)
     completion_cycle = cycle + latency
@@ -617,7 +628,7 @@ def _plan_tload(
     num_bytes = _tensor_nbytes(shape, dtype)
     memory, local_address = state.resolve_memory(address, config)
     if memory is state.scratchpad:
-        latency = scratchpad_latency(config.scratchpad, num_bytes)
+        latency = _scratchpad_latency(state, config, local_address, num_bytes)
     else:
         latency = dram_read_latency(config.dram, num_bytes)
     completion_cycle = cycle + latency
@@ -665,7 +676,7 @@ def _plan_tstore(
     raw = _store_tensor_payload(tensor_value.payload, dtype)
     memory, local_address = state.resolve_memory(address, config)
     if memory is state.scratchpad:
-        latency = scratchpad_latency(config.scratchpad, len(raw))
+        latency = _scratchpad_latency(state, config, local_address, len(raw))
     else:
         latency = dram_write_latency(config.dram, len(raw))
     completion_cycle = cycle + latency
