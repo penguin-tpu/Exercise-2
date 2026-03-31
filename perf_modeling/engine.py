@@ -12,6 +12,7 @@ from perf_modeling.state.arch_state import ArchState
 from perf_modeling.stats import SimulationStats
 from perf_modeling.timing.scoreboard import Scoreboard
 from perf_modeling.trace import TraceRecorder
+from perf_modeling.traps import MachineTrap
 from perf_modeling.types import Cycle
 from perf_modeling.units.dma import DMAUnit
 from perf_modeling.units.load_store import LoadStoreUnit
@@ -114,6 +115,12 @@ class SimulatorEngine:
         if any(not self.scoreboard.scalar_ready(index) for index in instruction.dest_regs()):
             self.stats.increment("stall_scalar_waw", 1)
             return
+        if any(not self.scoreboard.csr_ready(address) for address in instruction.source_csrs()):
+            self.stats.increment("stall_csr_dependency", 1)
+            return
+        if any(not self.scoreboard.csr_ready(address) for address in instruction.dest_csrs()):
+            self.stats.increment("stall_csr_waw", 1)
+            return
         if instruction.opcode == "fence" and self.state.outstanding_ops:
             self.stats.increment("stall_fence", 1)
             return
@@ -129,6 +136,9 @@ class SimulatorEngine:
                 scoreboard=self.scoreboard,
                 backend=self.backend,
             )
+        except MachineTrap as trap:
+            self._deliver_trap(trap)
+            return
         except Exception as exc:
             self.state.trap(str(exc))
             self.trace.append(self.cycle, "trap", str(exc))
@@ -137,6 +147,8 @@ class SimulatorEngine:
         self.next_op_id += 1
         for register in instruction.dest_regs():
             self.scoreboard.mark_scalar_busy(register)
+        for address in instruction.dest_csrs():
+            self.scoreboard.mark_csr_busy(address)
         completion_callback = self._wrap_completion_callback(
             instruction=instruction,
             unit=unit,
@@ -199,12 +211,27 @@ class SimulatorEngine:
         def callback() -> None:
             try:
                 plan.on_complete()
+            except MachineTrap as trap:
+                self._deliver_trap(trap)
             except Exception as exc:
                 self.state.trap(str(exc))
                 self.trace.append(self.cycle, "trap", str(exc))
             unit.complete()
             for register in instruction.dest_regs():
                 self.scoreboard.release_scalar(register)
+            for address in instruction.dest_csrs():
+                self.scoreboard.release_csr(address)
+            self.state.retire_instruction()
             self.stats.increment("instructions_retired", 1)
 
         return callback
+
+    def _deliver_trap(self, trap: MachineTrap) -> None:
+        """Deliver one machine trap either into `mtvec` or into a terminal halt."""
+        if self.config.machine.enable_trap_handlers:
+            target = self.state.enter_trap(trap, self.cycle)
+            if self.program.contains_pc(target):
+                self.trace.append(self.cycle, "trap", trap.reason)
+                return
+        self.state.trap(trap.reason)
+        self.trace.append(self.cycle, "trap", trap.reason)

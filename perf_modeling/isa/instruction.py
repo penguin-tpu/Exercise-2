@@ -41,6 +41,14 @@ class Instruction:
         """Return the scalar destination register indexes written by this instruction."""
         return tuple(int(index) for index in self.metadata.get("dest_regs", ()))
 
+    def source_csrs(self) -> tuple[int, ...]:
+        """Return the CSR addresses read by this instruction."""
+        return tuple(int(address) for address in self.metadata.get("source_csrs", ()))
+
+    def dest_csrs(self) -> tuple[int, ...]:
+        """Return the CSR addresses written by this instruction."""
+        return tuple(int(address) for address in self.metadata.get("dest_csrs", ()))
+
     def unit_name(self) -> str:
         """Return the execution unit expected to service this instruction."""
         if self.opcode in {"lb", "lh", "lw", "lbu", "lhu", "sb", "sh", "sw"}:

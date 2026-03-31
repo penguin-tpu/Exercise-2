@@ -129,10 +129,16 @@ class MachineConfig:
     """Initial stack pointer used for bare-metal RV32I execution."""
     scratchpad_base_address: int = 0x2000_0000
     """Base address of the memory-mapped scratchpad window."""
+    default_mtvec: int = 0x0000_0080
+    """Default machine trap-vector base address."""
+    hart_id: int = 0
+    """Machine hart identifier returned by `mhartid`."""
     halt_on_ecall: bool = True
     """Whether an ECALL instruction halts the simulator."""
     halt_on_ebreak: bool = True
     """Whether an EBREAK instruction halts the simulator."""
+    enable_trap_handlers: bool = False
+    """Whether machine traps vector into `mtvec` instead of halting immediately."""
     strict_alignment: bool = True
     """Whether misaligned instruction and data accesses raise a trap."""
     instruction_bytes: int = 4

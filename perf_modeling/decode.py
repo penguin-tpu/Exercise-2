@@ -244,7 +244,10 @@ class Decoder:
                 0b111: "bgeu",
             }.get(funct3)
             if branch_opcode is None:
-                raise ValueError(f"Unsupported RV32I branch funct3=0b{funct3:03b} at 0x{pc:08x}.")
+                return self._illegal_instruction(
+                    metadata,
+                    f"Unsupported RV32I branch funct3=0b{funct3:03b} at 0x{pc:08x}.",
+                )
             imm = self._decode_b_type_imm(word)
             return self._make_instruction(
                 branch_opcode,
@@ -263,7 +266,10 @@ class Decoder:
                 0b101: "lhu",
             }.get(funct3)
             if load_opcode is None:
-                raise ValueError(f"Unsupported RV32I load funct3=0b{funct3:03b} at 0x{pc:08x}.")
+                return self._illegal_instruction(
+                    metadata,
+                    f"Unsupported RV32I load funct3=0b{funct3:03b} at 0x{pc:08x}.",
+                )
             imm = self._sign_extend(word >> 20, 12)
             return self._make_instruction(load_opcode, metadata, rd=rd, rs1=rs1, imm=imm)
         if opcode_field == 0x23:
@@ -273,19 +279,25 @@ class Decoder:
                 0b010: "sw",
             }.get(funct3)
             if store_opcode is None:
-                raise ValueError(f"Unsupported RV32I store funct3=0b{funct3:03b} at 0x{pc:08x}.")
+                return self._illegal_instruction(
+                    metadata,
+                    f"Unsupported RV32I store funct3=0b{funct3:03b} at 0x{pc:08x}.",
+                )
             imm = self._decode_s_type_imm(word)
             return self._make_instruction(store_opcode, metadata, rs1=rs1, rs2=rs2, imm=imm)
         if opcode_field == 0x13:
             imm = self._sign_extend(word >> 20, 12)
             if funct3 == 0b001:
                 if funct7 != 0:
-                    raise ValueError(f"Invalid SLLI encoding at 0x{pc:08x}.")
+                    return self._illegal_instruction(metadata, f"Invalid SLLI encoding at 0x{pc:08x}.")
                 return self._make_instruction("slli", metadata, rd=rd, rs1=rs1, imm=rs2)
             if funct3 == 0b101:
                 shift_opcode = {0x00: "srli", 0x20: "srai"}.get(funct7)
                 if shift_opcode is None:
-                    raise ValueError(f"Invalid shift-immediate encoding at 0x{pc:08x}.")
+                    return self._illegal_instruction(
+                        metadata,
+                        f"Invalid shift-immediate encoding at 0x{pc:08x}.",
+                    )
                 return self._make_instruction(shift_opcode, metadata, rd=rd, rs1=rs1, imm=rs2)
             alu_imm_opcode = {
                 0b000: "addi",
@@ -296,7 +308,8 @@ class Decoder:
                 0b111: "andi",
             }.get(funct3)
             if alu_imm_opcode is None:
-                raise ValueError(
+                return self._illegal_instruction(
+                    metadata,
                     f"Unsupported RV32I ALU-immediate funct3=0b{funct3:03b} at 0x{pc:08x}."
                 )
             return self._make_instruction(alu_imm_opcode, metadata, rd=rd, rs1=rs1, imm=imm)
@@ -314,24 +327,74 @@ class Decoder:
                 (0b111, 0x00): "and",
             }.get((funct3, funct7))
             if alu_opcode is None:
-                raise ValueError(
+                return self._illegal_instruction(
+                    metadata,
                     f"Unsupported RV32I ALU register encoding funct3=0b{funct3:03b} funct7=0x{funct7:02x} at 0x{pc:08x}."
                 )
             return self._make_instruction(alu_opcode, metadata, rd=rd, rs1=rs1, rs2=rs2)
         if opcode_field == 0x0F:
             if funct3 != 0:
-                raise ValueError(f"Unsupported fence encoding at 0x{pc:08x}.")
+                return self._illegal_instruction(metadata, f"Unsupported fence encoding at 0x{pc:08x}.")
             return self._make_instruction("fence", metadata)
         if opcode_field == 0x73:
-            imm = word >> 20
-            system_opcode = {
-                0x000: "ecall",
-                0x001: "ebreak",
-            }.get(imm)
-            if system_opcode is None:
-                raise ValueError(f"Unsupported system encoding 0x{imm:03x} at 0x{pc:08x}.")
-            return self._make_instruction(system_opcode, metadata, is_control=True)
-        raise ValueError(f"Unsupported RV32I opcode 0x{opcode_field:02x} at 0x{pc:08x}.")
+            csr_address = word >> 20
+            if funct3 == 0:
+                system_opcode = {
+                    0x000: "ecall",
+                    0x001: "ebreak",
+                    0x302: "mret",
+                }.get(csr_address)
+                if system_opcode is None:
+                    return self._illegal_instruction(
+                        metadata,
+                        f"Unsupported system encoding 0x{csr_address:03x} at 0x{pc:08x}.",
+                    )
+                source_csrs = (0x341,) if system_opcode == "mret" else ()
+                return self._make_instruction(
+                    system_opcode,
+                    metadata,
+                    is_control=True,
+                    source_csrs=source_csrs,
+                )
+            csr_opcode = {
+                0b001: "csrrw",
+                0b010: "csrrs",
+                0b011: "csrrc",
+                0b101: "csrrwi",
+                0b110: "csrrsi",
+                0b111: "csrrci",
+            }.get(funct3)
+            if csr_opcode is None:
+                return self._illegal_instruction(
+                    metadata,
+                    f"Unsupported CSR funct3=0b{funct3:03b} at 0x{pc:08x}.",
+                )
+            source_regs: tuple[int, ...] = ()
+            zimm = None
+            writes_csr = True
+            if funct3 >= 0b101:
+                zimm = rs1
+                writes_csr = csr_opcode in {"csrrwi"} or zimm != 0
+            else:
+                source_regs = (rs1,)
+                writes_csr = csr_opcode == "csrrw" or rs1 != 0
+            return self._make_instruction(
+                csr_opcode,
+                metadata,
+                rd=rd,
+                rs1=rs1,
+                imm=zimm,
+                source_regs=source_regs,
+                source_csrs=(csr_address,),
+                dest_csrs=((csr_address,) if writes_csr else ()),
+            )
+        return self._illegal_instruction(metadata, f"Unsupported RV32I opcode 0x{opcode_field:02x} at 0x{pc:08x}.")
+
+    def _illegal_instruction(self, metadata: dict[str, int], reason: str) -> Instruction:
+        """Return a decoded illegal instruction placeholder."""
+        normalized = dict(metadata)
+        normalized["illegal_reason"] = reason
+        return Instruction(opcode="illegal", metadata=normalized)
 
     def _make_instruction(
         self,
@@ -342,15 +405,22 @@ class Decoder:
         rs2: int | None = None,
         imm: int | None = None,
         is_control: bool = False,
+        source_regs: tuple[int, ...] | None = None,
+        source_csrs: tuple[int, ...] = (),
+        dest_csrs: tuple[int, ...] = (),
     ) -> Instruction:
         """Construct an instruction with normalized metadata."""
         normalized = dict(metadata)
-        normalized["source_regs"] = tuple(
-            register for register in (rs1, rs2) if register is not None
+        normalized["source_regs"] = (
+            tuple(int(register) for register in source_regs)
+            if source_regs is not None
+            else tuple(register for register in (rs1, rs2) if register is not None)
         )
         normalized["dest_regs"] = tuple(
             register for register in (rd,) if register is not None and register != 0
         )
+        normalized["source_csrs"] = tuple(source_csrs)
+        normalized["dest_csrs"] = tuple(dest_csrs)
         if rd is not None:
             normalized["rd"] = rd
         if rs1 is not None:

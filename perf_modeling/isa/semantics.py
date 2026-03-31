@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from perf_modeling.isa.instruction import ExecutionPlan, Instruction
+from perf_modeling.state.csr_file import CSR_MEPC
 from perf_modeling.timing.latency import (
     dram_read_latency,
     dram_write_latency,
@@ -13,6 +14,15 @@ from perf_modeling.timing.latency import (
     scratchpad_latency,
 )
 from perf_modeling.timing.resources import ResourceReservation
+from perf_modeling.traps import (
+    CAUSE_BREAKPOINT,
+    CAUSE_ENV_CALL_FROM_M_MODE,
+    CAUSE_ILLEGAL_INSTRUCTION,
+    CAUSE_INSTRUCTION_ADDRESS_MISALIGNED,
+    CAUSE_LOAD_ADDRESS_MISALIGNED,
+    CAUSE_STORE_ADDRESS_MISALIGNED,
+    MachineTrap,
+)
 
 if TYPE_CHECKING:
     from perf_modeling.backend.torch_backend import TensorBackend
@@ -91,12 +101,41 @@ def _next_pc(pc: int) -> int:
     return _u32(pc + 4)
 
 
-def _check_alignment(address: int, size: int, config: "AcceleratorConfig", kind: str) -> None:
+def _check_alignment(
+    address: int,
+    size: int,
+    pc: int,
+    config: "AcceleratorConfig",
+    kind: str,
+) -> None:
     """Validate an aligned architectural address when strict mode is enabled."""
     if not config.machine.strict_alignment:
         return
     if address % size != 0:
-        raise ValueError(f"Misaligned {kind} access at 0x{address:08x} for size {size}.")
+        cause = {
+            "jump": CAUSE_INSTRUCTION_ADDRESS_MISALIGNED,
+            "branch": CAUSE_INSTRUCTION_ADDRESS_MISALIGNED,
+            "load": CAUSE_LOAD_ADDRESS_MISALIGNED,
+            "store": CAUSE_STORE_ADDRESS_MISALIGNED,
+        }[kind]
+        raise MachineTrap(
+            cause=cause,
+            pc=pc,
+            tval=address,
+            reason=f"Misaligned {kind} access at 0x{address:08x} for size {size}.",
+        )
+
+
+def _csr_writes(instruction: Instruction) -> bool:
+    """Return whether a CSR instruction updates its target CSR."""
+    opcode = instruction.opcode
+    if opcode == "csrrw" or opcode == "csrrwi":
+        return True
+    if opcode in {"csrrs", "csrrc"}:
+        return _load_field(instruction, "rs1") != 0
+    if opcode in {"csrrsi", "csrrci"}:
+        return _load_field(instruction, "imm") != 0
+    return False
 
 
 def _scalar_plan(
@@ -242,7 +281,7 @@ def _plan_jal(
     rd = _load_field(instruction, "rd")
     target = _u32(pc + _load_field(instruction, "imm"))
     link_value = _next_pc(pc)
-    _check_alignment(target, 4, config, "jump")
+    _check_alignment(target, 4, pc, config, "jump")
 
     def on_complete() -> None:
         state.scalar_regs.write(rd, link_value)
@@ -267,7 +306,7 @@ def _plan_jalr(
     base = state.scalar_regs.read(rs1)
     target = _u32(base + imm) & ~0x1
     link_value = _next_pc(pc)
-    _check_alignment(target, 4, config, "jump")
+    _check_alignment(target, 4, pc, config, "jump")
 
     def on_complete() -> None:
         state.scalar_regs.write(rd, link_value)
@@ -305,7 +344,7 @@ def _plan_branch(
     else:
         raise KeyError(f"Unsupported branch opcode {instruction.opcode!r}.")
     target = _u32(pc + _load_field(instruction, "imm")) if taken else _next_pc(pc)
-    _check_alignment(target, 4, config, "branch")
+    _check_alignment(target, 4, pc, config, "branch")
 
     def on_complete() -> None:
         state.jump(target)
@@ -328,7 +367,7 @@ def _plan_load(
     imm = _load_field(instruction, "imm")
     address = _u32(state.scalar_regs.read(rs1) + imm)
     width, signed = LOAD_WIDTHS[instruction.opcode]
-    _check_alignment(address, width, config, "load")
+    _check_alignment(address, width, pc, config, "load")
     memory, _local_address = state.resolve_memory(address, config)
     if memory is state.scratchpad:
         latency = scratchpad_latency(config.scratchpad, width)
@@ -375,7 +414,7 @@ def _plan_store(
     address = _u32(state.scalar_regs.read(rs1) + imm)
     value = state.scalar_regs.read(rs2)
     width = STORE_WIDTHS[instruction.opcode]
-    _check_alignment(address, width, config, "store")
+    _check_alignment(address, width, pc, config, "store")
     memory, _local_address = state.resolve_memory(address, config)
     if memory is state.scratchpad:
         latency = scratchpad_latency(config.scratchpad, width)
@@ -439,9 +478,103 @@ def _plan_system(
         if instruction.opcode == "ebreak" and config.machine.halt_on_ebreak:
             state.halt(exit_code=state.scalar_regs.read(10))
             return
-        state.trap(f"Unhandled system opcode {instruction.opcode} at 0x{pc:08x}")
+        if instruction.opcode == "ecall":
+            raise MachineTrap(
+                cause=CAUSE_ENV_CALL_FROM_M_MODE,
+                pc=pc,
+                tval=0,
+                reason=f"Environment call from M-mode at 0x{pc:08x}.",
+            )
+        if instruction.opcode == "ebreak":
+            raise MachineTrap(
+                cause=CAUSE_BREAKPOINT,
+                pc=pc,
+                tval=0,
+                reason=f"Breakpoint at 0x{pc:08x}.",
+            )
+        raise MachineTrap(
+            cause=CAUSE_ILLEGAL_INSTRUCTION,
+            pc=pc,
+            tval=_load_field(instruction, "word"),
+            reason=f"Unhandled system opcode {instruction.opcode} at 0x{pc:08x}.",
+        )
 
     return _scalar_plan(cycle, config, "scalar", on_complete, f"{instruction.opcode} @ 0x{pc:08x}")
+
+
+def _plan_csr(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    _scoreboard: "Scoreboard",
+    _backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    pc = _load_field(instruction, "pc")
+    rd = _load_field(instruction, "rd")
+    csr_address = instruction.source_csrs()[0]
+    old_value = state.read_csr(csr_address, cycle)
+    if instruction.opcode in {"csrrw", "csrrs", "csrrc"}:
+        rs1 = _load_field(instruction, "rs1")
+        operand_value = state.scalar_regs.read(rs1)
+    else:
+        operand_value = _load_field(instruction, "imm")
+    write_value = old_value
+    if instruction.opcode in {"csrrw", "csrrwi"}:
+        write_value = operand_value
+    elif instruction.opcode in {"csrrs", "csrrsi"}:
+        write_value = old_value | operand_value
+    elif instruction.opcode in {"csrrc", "csrrci"}:
+        write_value = old_value & ~operand_value
+
+    def on_complete() -> None:
+        if _csr_writes(instruction):
+            state.write_csr(csr_address, write_value, pc)
+        state.scalar_regs.write(rd, old_value)
+
+    return _scalar_plan(cycle, config, "scalar", on_complete, f"{instruction.opcode} @ 0x{pc:08x}")
+
+
+def _plan_mret(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    _scoreboard: "Scoreboard",
+    _backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    pc = _load_field(instruction, "pc")
+    target = state.read_csr(CSR_MEPC, cycle)
+    _check_alignment(target, 4, pc, config, "jump")
+
+    def on_complete() -> None:
+        state.jump(target)
+        state.fetch_stalled = False
+
+    return _scalar_plan(cycle, config, "scalar", on_complete, f"mret @ 0x{pc:08x}")
+
+
+def _plan_illegal(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    _scoreboard: "Scoreboard",
+    _backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    pc = _load_field(instruction, "pc")
+    word = _load_field(instruction, "word")
+    reason = str(instruction.metadata.get("illegal_reason", f"Illegal instruction at 0x{pc:08x}."))
+
+    def on_complete() -> None:
+        raise MachineTrap(
+            cause=CAUSE_ILLEGAL_INSTRUCTION,
+            pc=pc,
+            tval=word,
+            reason=reason,
+        )
+
+    return _scalar_plan(cycle, config, "scalar", on_complete, f"illegal @ 0x{pc:08x}")
 
 
 def build_rv32i_semantics_registry() -> SemanticsRegistry:
@@ -462,8 +595,12 @@ def build_rv32i_semantics_registry() -> SemanticsRegistry:
     for opcode in STORE_WIDTHS:
         registry.register(opcode, _plan_store)
     registry.register("fence", _plan_fence)
+    for opcode in ("csrrw", "csrrs", "csrrc", "csrrwi", "csrrsi", "csrrci"):
+        registry.register(opcode, _plan_csr)
     registry.register("ecall", _plan_system)
     registry.register("ebreak", _plan_system)
+    registry.register("mret", _plan_mret)
+    registry.register("illegal", _plan_illegal)
     return registry
 
 

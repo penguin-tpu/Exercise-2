@@ -6,9 +6,17 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from perf_modeling.config import AcceleratorConfig
+from perf_modeling.state.csr_file import (
+    CSR_MEPC,
+    CSR_MCAUSE,
+    CSR_MTVEC,
+    CSR_MTVAL,
+    CSRFile,
+)
 from perf_modeling.state.memory import ByteAddressableMemory
 from perf_modeling.state.register_file import ScalarRegisterFile
 from perf_modeling.state.scratchpad import ScratchpadMemory
+from perf_modeling.traps import MachineTrap
 from perf_modeling.types import OpId, TensorDescriptor
 
 if TYPE_CHECKING:
@@ -29,6 +37,7 @@ class ArchState:
 
     scalar_regs: ScalarRegisterFile
     tensor_regs: object
+    csr_file: CSRFile
     scratchpad: ScratchpadMemory
     dram: ByteAddressableMemory
     machine_config: object
@@ -37,6 +46,7 @@ class ArchState:
     fetch_stalled: bool = False
     exit_code: int | None = None
     trap_reason: str | None = None
+    retired_instructions: int = 0
     outstanding_ops: set[OpId] = field(default_factory=set)
 
     @classmethod
@@ -49,6 +59,7 @@ class ArchState:
             register_width_bits=config.registers.scalar_register_width_bits,
         )
         tensor_regs = TensorRegisterFile(num_registers=config.tensors.num_tensor_registers)
+        csr_file = CSRFile()
         scratchpad = ScratchpadMemory(
             capacity_bytes=config.scratchpad.capacity_bytes,
             name="scratchpad",
@@ -59,6 +70,7 @@ class ArchState:
         return cls(
             scalar_regs=scalar_regs,
             tensor_regs=tensor_regs,
+            csr_file=csr_file,
             scratchpad=scratchpad,
             dram=dram,
             machine_config=config.machine,
@@ -72,10 +84,12 @@ class ArchState:
         self.fetch_stalled = False
         self.exit_code = None
         self.trap_reason = None
+        self.retired_instructions = 0
         self.outstanding_ops.clear()
         self.scalar_regs.reset()
         self.scalar_regs.write(2, self.machine_config.initial_stack_pointer)
         self.tensor_regs.reset()
+        self.csr_file.reset(self.machine_config)
         self.scratchpad.reset()
         self.dram.reset()
 
@@ -120,6 +134,40 @@ class ArchState:
         self.halted = True
         self.fetch_stalled = False
         self.trap_reason = reason
+
+    def enter_trap(self, trap: MachineTrap, cycle: int) -> int:
+        """Update machine trap CSRs and return the trap handler target address."""
+        self.csr_file.write(CSR_MEPC, trap.pc, trap.pc)
+        self.csr_file.write(CSR_MCAUSE, trap.cause, trap.pc)
+        self.csr_file.write(CSR_MTVAL, trap.tval, trap.pc)
+        self.trap_reason = trap.reason
+        self.halted = False
+        self.fetch_stalled = False
+        target = self.csr_file.read(CSR_MTVEC, cycle, self.retired_instructions)
+        self.jump(target)
+        return target
+
+    def read_csr(self, address: int, cycle: int) -> int:
+        """Read one machine CSR."""
+        try:
+            return self.csr_file.read(address, cycle, self.retired_instructions)
+        except MachineTrap as trap:
+            if trap.pc == 0:
+                raise MachineTrap(
+                    cause=trap.cause,
+                    pc=self.pc,
+                    tval=trap.tval,
+                    reason=trap.reason,
+                ) from trap
+            raise
+
+    def write_csr(self, address: int, value: int, pc: int) -> None:
+        """Write one machine CSR."""
+        self.csr_file.write(address, value, pc)
+
+    def retire_instruction(self) -> None:
+        """Advance the retired-instruction counter used by `instret` CSRs."""
+        self.retired_instructions += 1
 
     def resolve_memory(self, address: int, config: AcceleratorConfig) -> tuple[ByteAddressableMemory, int]:
         """Return the addressed memory object plus its local byte address."""
