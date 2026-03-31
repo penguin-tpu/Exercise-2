@@ -325,6 +325,13 @@ def _memory_access_reservations(
     return [_memory_resource_reservation(memory_name, cycle, completion_cycle)]
 
 
+def _memory_byte_stats(memory_name: str, num_bytes: int, is_write: bool) -> dict[str, int]:
+    """Create per-memory byte counters for one access."""
+    if is_write:
+        return {f"{memory_name}.bytes_written": num_bytes}
+    return {f"{memory_name}.bytes_read": num_bytes}
+
+
 def _require_tensor(state: "ArchState", index: int, pc: int, name: str) -> TensorValue:
     """Read one tensor register and raise an architectural trap when it is empty."""
     tensor_value = state.tensor_regs.read(index)
@@ -606,7 +613,7 @@ def _plan_load(
         ],
         on_complete=on_complete,
         description=f"{instruction.opcode} @ 0x{pc:08x}",
-        stats={"bytes_read": width},
+        stats={"bytes_read": width, **_memory_byte_stats(memory.name, width, False)},
     )
 
 
@@ -663,7 +670,7 @@ def _plan_store(
         ],
         on_complete=on_complete,
         description=f"{instruction.opcode} @ 0x{pc:08x}",
-        stats={"bytes_written": width},
+        stats={"bytes_written": width, **_memory_byte_stats(memory.name, width, True)},
     )
 
 
@@ -721,7 +728,7 @@ def _plan_tload(
         ],
         on_complete=on_complete,
         description=f"tload @ 0x{pc:08x}",
-        stats={"bytes_read": num_bytes},
+        stats={"bytes_read": num_bytes, **_memory_byte_stats(memory.name, num_bytes, False)},
     )
 
 
@@ -771,7 +778,7 @@ def _plan_tstore(
         ],
         on_complete=on_complete,
         description=f"tstore @ 0x{pc:08x}",
-        stats={"bytes_written": len(raw)},
+        stats={"bytes_written": len(raw), **_memory_byte_stats(memory.name, len(raw), True)},
     )
 
 
@@ -832,7 +839,12 @@ def _plan_dma_copy(
         ],
         on_complete=on_complete,
         description=f"dma_copy @ 0x{pc:08x}",
-        stats={"bytes_read": num_bytes, "bytes_written": num_bytes},
+        stats={
+            "bytes_read": num_bytes,
+            "bytes_written": num_bytes,
+            **_memory_byte_stats(source_memory.name, num_bytes, False),
+            **_memory_byte_stats(dest_memory.name, num_bytes, True),
+        },
     )
 
 

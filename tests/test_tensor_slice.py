@@ -64,3 +64,6 @@ class TestTensorSlice:
         assert stats["vector.issued_ops"] == 1
         assert stats["mxu.issued_ops"] == 1
         assert stats["load_store.issued_ops"] >= 4
+        assert stats["dram.bytes_read"] == 32
+        assert stats["dram.bytes_written"] == 16
+        assert stats["scratchpad.bytes_written"] == 16

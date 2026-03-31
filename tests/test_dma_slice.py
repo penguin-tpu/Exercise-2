@@ -50,6 +50,8 @@ class TestDMASlice:
         assert engine.state.exit_code == 9
         assert engine.state.scratchpad.read(0, 16) == b"abcdefghijklmnop"
         assert stats["dma.issued_ops"] == 1
+        assert stats["dram.bytes_read"] == 16
+        assert stats["scratchpad.bytes_written"] == 16
         assert stats["stall_fence"] >= 1
 
     def test_dma_queue_occupancy_histogram_tracks_multiple_inflight_transfers(self) -> None:
@@ -73,5 +75,7 @@ class TestDMASlice:
         assert engine.state.scratchpad.read(0, 16) == b"abcdefghijklmnop"
         assert engine.state.scratchpad.read(16, 16) == b"qrstuvwxyzABCDEF"
         assert stats["dma.issued_ops"] == 2
+        assert stats["dram.bytes_read"] == 32
+        assert stats["scratchpad.bytes_written"] == 32
         assert stats["dma.queue_occupancy.1"] >= 1
         assert stats["dma.queue_occupancy.2"] >= 1
