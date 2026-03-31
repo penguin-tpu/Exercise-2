@@ -97,6 +97,56 @@ class TestWorkloadBuilders:
         assert stats["vector.issued_ops"] == 1
         assert stats["stall_fence"] >= 1
 
+    def test_vector_mul_smoke_builder_executes_end_to_end(self) -> None:
+        """The vector-multiply builder should emit a runnable tensor microbenchmark."""
+        problem = KernelProblem(
+            name="vector-mul",
+            input_shapes=((4,), (4,)),
+            output_shape=(4,),
+        )
+        program = ProgramBuilder(base_address=0x1000).build_vector_mul_smoke_test(
+            problem=problem,
+            lhs_address=0x200,
+            rhs_address=0x240,
+            output_address=0x280,
+            dtype="int32",
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x200, pack_int32([1, 2, 3, 4]))
+        engine.state.dram.write(0x240, pack_int32([5, -1, 0, 2]))
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert unpack_int32(engine.state.dram.read(0x280, 16)) == (5, -2, 0, 8)
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_vector_mul_smoke_builder_executes_float32_end_to_end(self) -> None:
+        """The vector-multiply builder should support float32 tensor payloads."""
+        problem = KernelProblem(
+            name="vector-mul-float32",
+            input_shapes=((4,), (4,)),
+            output_shape=(4,),
+        )
+        program = ProgramBuilder(base_address=0x1000).build_vector_mul_smoke_test(
+            problem=problem,
+            lhs_address=0x200,
+            rhs_address=0x240,
+            output_address=0x280,
+            dtype="float32",
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x200, pack_float32([0.5, 1.5, -2.0, 3.0]))
+        engine.state.dram.write(0x240, pack_float32([2.0, -1.0, 0.25, 0.5]))
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert unpack_float32(engine.state.dram.read(0x280, 16)) == (1.0, -1.5, -0.5, 1.5)
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
     def test_vector_relu_smoke_builder_executes_end_to_end(self) -> None:
         """The vector-ReLU builder should emit a runnable tensor microbenchmark."""
         problem = KernelProblem(
@@ -293,6 +343,62 @@ class TestWorkloadBuilders:
 
         assert engine.state.halted
         assert unpack_float32(engine.state.dram.read(0x280, 16)) == (2.5, 1.5, 2.5, 3.5)
+        assert stats["dma.issued_ops"] == 3
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_staged_vector_mul_smoke_builder_executes_end_to_end(self) -> None:
+        """The staged vector-multiply builder should DMA through scratchpad before compute."""
+        problem = KernelProblem(
+            name="staged-vector-mul",
+            input_shapes=((4,), (4,)),
+            output_shape=(4,),
+        )
+        config = self.make_config()
+        program = ProgramBuilder(base_address=0x1000).build_staged_vector_mul_smoke_test(
+            problem=problem,
+            lhs_address=0x200,
+            rhs_address=0x240,
+            output_address=0x280,
+            dtype="int32",
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+        engine = SimulatorEngine(config=config, program=program)
+        engine.state.dram.write(0x200, pack_int32([1, 2, 3, 4]))
+        engine.state.dram.write(0x240, pack_int32([5, -1, 0, 2]))
+
+        stats = engine.run(max_cycles=400).snapshot()
+
+        assert engine.state.halted
+        assert unpack_int32(engine.state.dram.read(0x280, 16)) == (5, -2, 0, 8)
+        assert stats["dma.issued_ops"] == 3
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_staged_vector_mul_smoke_builder_executes_float32_end_to_end(self) -> None:
+        """The staged vector-multiply builder should support float32 tensor payloads."""
+        problem = KernelProblem(
+            name="staged-vector-mul-float32",
+            input_shapes=((4,), (4,)),
+            output_shape=(4,),
+        )
+        config = self.make_config()
+        program = ProgramBuilder(base_address=0x1000).build_staged_vector_mul_smoke_test(
+            problem=problem,
+            lhs_address=0x200,
+            rhs_address=0x240,
+            output_address=0x280,
+            dtype="float32",
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+        engine = SimulatorEngine(config=config, program=program)
+        engine.state.dram.write(0x200, pack_float32([0.5, 1.5, -2.0, 3.0]))
+        engine.state.dram.write(0x240, pack_float32([2.0, -1.0, 0.25, 0.5]))
+
+        stats = engine.run(max_cycles=400).snapshot()
+
+        assert engine.state.halted
+        assert unpack_float32(engine.state.dram.read(0x280, 16)) == (1.0, -1.5, -0.5, 1.5)
         assert stats["dma.issued_ops"] == 3
         assert stats["vector.issued_ops"] == 1
         assert stats["stall_fence"] >= 1

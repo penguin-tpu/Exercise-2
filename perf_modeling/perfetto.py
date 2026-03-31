@@ -80,7 +80,7 @@ DMA_OPCODES = frozenset({"dma_copy"})
 """Opcodes emitted on the DMA track."""
 
 
-VECTOR_OPCODES = frozenset({"vadd", "vrelu", "vreduce_sum"})
+VECTOR_OPCODES = frozenset({"vadd", "vmul", "vrelu", "vreduce_sum"})
 """Opcodes emitted on the vector track."""
 
 

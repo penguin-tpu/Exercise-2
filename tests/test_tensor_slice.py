@@ -106,6 +106,52 @@ class TestTensorSlice:
         assert stats["vector.issued_ops"] == 1
         assert stats["mxu.issued_ops"] == 1
 
+    def test_tensor_vertical_slice_executes_vector_mul_load_compute_store(self) -> None:
+        """Tensor loads, vector multiply, and stores should execute through the engine."""
+        program = (
+            ProgramBuilder(base_address=0x1000)
+            .emit_tensor_load(dest_tensor=0, address=0x200, shape=(4,), dtype="int32")
+            .emit_tensor_load(dest_tensor=1, address=0x240, shape=(4,), dtype="int32")
+            .emit_vector_mul(dest_tensor=2, lhs_tensor=0, rhs_tensor=1, out_dtype="int32")
+            .emit_tensor_store(source_tensor=2, address=0x280)
+            .emit("ebreak")
+            .build(name="tensor-vector-mul-vertical-slice")
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x200, pack_int32([1, 2, 3, 4]))
+        engine.state.dram.write(0x240, pack_int32([5, -1, 0, 2]))
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert tuple(engine.state.tensor_regs.read(2).payload.reshape(-1).tolist()) == (5, -2, 0, 8)
+        assert unpack_int32(engine.state.dram.read(0x280, 16)) == (5, -2, 0, 8)
+        assert stats["vector.issued_ops"] == 1
+        assert stats["load_store.issued_ops"] >= 3
+
+    def test_tensor_vertical_slice_executes_float32_vector_mul_load_compute_store(self) -> None:
+        """Vector multiply should also support float32 payloads."""
+        program = (
+            ProgramBuilder(base_address=0x1000)
+            .emit_tensor_load(dest_tensor=0, address=0x200, shape=(4,), dtype="float32")
+            .emit_tensor_load(dest_tensor=1, address=0x240, shape=(4,), dtype="float32")
+            .emit_vector_mul(dest_tensor=2, lhs_tensor=0, rhs_tensor=1, out_dtype="float32")
+            .emit_tensor_store(source_tensor=2, address=0x280)
+            .emit("ebreak")
+            .build(name="tensor-float32-vector-mul-vertical-slice")
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x200, pack_float32([0.5, 1.5, -2.0, 3.0]))
+        engine.state.dram.write(0x240, pack_float32([2.0, -1.0, 0.25, 0.5]))
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert tuple(engine.state.tensor_regs.read(2).payload.reshape(-1).tolist()) == (1.0, -1.5, -0.5, 1.5)
+        assert unpack_float32(engine.state.dram.read(0x280, 16)) == (1.0, -1.5, -0.5, 1.5)
+        assert stats["vector.issued_ops"] == 1
+        assert stats["load_store.issued_ops"] >= 3
+
     def test_tensor_vertical_slice_executes_vector_relu_and_reduce_sum(self) -> None:
         """Tensor loads, vector ReLU, vector reduce-sum, and stores should execute through the engine."""
         scratchpad_base = self.make_config().machine.scratchpad_base_address

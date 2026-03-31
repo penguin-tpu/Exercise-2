@@ -112,6 +112,23 @@ class ProgramBuilder:
             },
         )
 
+    def emit_vector_mul(
+        self,
+        dest_tensor: int,
+        lhs_tensor: int,
+        rhs_tensor: int,
+        out_dtype: str,
+    ) -> "ProgramBuilder":
+        """Append a vector elementwise multiply across two tensor registers."""
+        return self.emit(
+            "vmul",
+            metadata={
+                "source_tensors": (lhs_tensor, rhs_tensor),
+                "dest_tensors": (dest_tensor,),
+                "out_dtype": out_dtype,
+            },
+        )
+
     def emit_vector_relu(
         self,
         dest_tensor: int,
@@ -255,6 +272,32 @@ class ProgramBuilder:
             .build(name=f"{problem.name}-vector-relu-smoke")
         )
 
+    def build_vector_mul_smoke_test(
+        self,
+        problem: KernelProblem,
+        lhs_address: int,
+        rhs_address: int,
+        output_address: int,
+        dtype: str,
+    ) -> Program:
+        """Construct a tensor-load, vector-multiply, tensor-store microbenchmark program."""
+        if len(problem.input_shapes) != 2:
+            raise ValueError("Vector-multiply smoke tests expect exactly two input tensors.")
+        if problem.input_shapes[0] != problem.input_shapes[1]:
+            raise ValueError("Vector-multiply smoke tests expect matching input shapes.")
+        if problem.output_shape != problem.input_shapes[0]:
+            raise ValueError("Vector-multiply smoke-test output shape must match the input tensors.")
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_tensor_load(dest_tensor=0, address=lhs_address, shape=problem.input_shapes[0], dtype=dtype)
+            .emit_tensor_load(dest_tensor=1, address=rhs_address, shape=problem.input_shapes[1], dtype=dtype)
+            .emit_vector_mul(dest_tensor=2, lhs_tensor=0, rhs_tensor=1, out_dtype=dtype)
+            .emit_tensor_store(source_tensor=2, address=output_address)
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-vector-mul-smoke")
+        )
+
     def build_vector_reduce_sum_smoke_test(
         self,
         problem: KernelProblem,
@@ -323,6 +366,54 @@ class ProgramBuilder:
             .emit("fence")
             .emit("ebreak")
             .build(name=f"{problem.name}-vector-add-staged-smoke")
+        )
+
+    def build_staged_vector_mul_smoke_test(
+        self,
+        problem: KernelProblem,
+        lhs_address: int,
+        rhs_address: int,
+        output_address: int,
+        dtype: str,
+        scratchpad_base_address: int,
+    ) -> Program:
+        """Construct a DMA-to-scratchpad vector-multiply smoke test."""
+        if len(problem.input_shapes) != 2:
+            raise ValueError("Vector-multiply smoke tests expect exactly two input tensors.")
+        if problem.input_shapes[0] != problem.input_shapes[1]:
+            raise ValueError("Vector-multiply smoke tests expect matching input shapes.")
+        if problem.output_shape != problem.input_shapes[0]:
+            raise ValueError("Vector-multiply smoke-test output shape must match the input tensors.")
+        payload_bytes = _tensor_payload_bytes(problem.output_shape, dtype)
+        lhs_scratch_address = scratchpad_base_address
+        rhs_scratch_address = lhs_scratch_address + payload_bytes
+        output_scratch_address = rhs_scratch_address + payload_bytes
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_dma_copy(
+                source_address=lhs_address,
+                dest_address=lhs_scratch_address,
+                num_bytes=payload_bytes,
+            )
+            .emit_dma_copy(
+                source_address=rhs_address,
+                dest_address=rhs_scratch_address,
+                num_bytes=payload_bytes,
+            )
+            .emit("fence")
+            .emit_tensor_load(dest_tensor=0, address=lhs_scratch_address, shape=problem.input_shapes[0], dtype=dtype)
+            .emit_tensor_load(dest_tensor=1, address=rhs_scratch_address, shape=problem.input_shapes[1], dtype=dtype)
+            .emit_vector_mul(dest_tensor=2, lhs_tensor=0, rhs_tensor=1, out_dtype=dtype)
+            .emit_tensor_store(source_tensor=2, address=output_scratch_address)
+            .emit("fence")
+            .emit_dma_copy(
+                source_address=output_scratch_address,
+                dest_address=output_address,
+                num_bytes=payload_bytes,
+            )
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-vector-mul-staged-smoke")
         )
 
     def build_staged_vector_relu_smoke_test(

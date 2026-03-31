@@ -868,14 +868,16 @@ def _plan_dma_copy(
     )
 
 
-def _plan_vadd(
+def _plan_vector_binary_elementwise(
     instruction: Instruction,
     cycle: int,
     state: "ArchState",
     config: "AcceleratorConfig",
-    _scoreboard: "Scoreboard",
     backend: "TensorBackend | None",
+    backend_op_name: str,
+    opcode_label: str,
 ) -> ExecutionPlan:
+    """Plan one binary elementwise vector operation."""
     pc = _load_field(instruction, "pc")
     lhs_index, rhs_index = instruction.source_tensors()
     dest_index = instruction.dest_tensors()[0]
@@ -886,7 +888,7 @@ def _plan_vadd(
             cause=CAUSE_ILLEGAL_INSTRUCTION,
             pc=pc,
             tval=0,
-            reason=f"Vector add shape mismatch at 0x{pc:08x}: {lhs.descriptor.shape} vs {rhs.descriptor.shape}.",
+            reason=f"Vector {opcode_label} shape mismatch at 0x{pc:08x}: {lhs.descriptor.shape} vs {rhs.descriptor.shape}.",
         )
     out_dtype = _tensor_dtype(instruction, "out_dtype")
     elements = _tensor_num_elements(lhs.descriptor.shape)
@@ -895,7 +897,7 @@ def _plan_vadd(
     def on_complete() -> None:
         if backend is None:
             raise ValueError("Tensor backend is required for vector instructions.")
-        payload = backend.elementwise("add", (lhs.payload, rhs.payload), out_dtype)
+        payload = backend.elementwise(backend_op_name, (lhs.payload, rhs.payload), out_dtype)
         _write_tensor_register(state, dest_index, lhs.descriptor.shape, out_dtype, payload)
 
     return ExecutionPlan(
@@ -908,7 +910,45 @@ def _plan_vadd(
             )
         ],
         on_complete=on_complete,
-        description=f"vadd @ 0x{pc:08x}",
+        description=f"{opcode_label} @ 0x{pc:08x}",
+    )
+
+
+def _plan_vadd(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    _scoreboard: "Scoreboard",
+    backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    return _plan_vector_binary_elementwise(
+        instruction,
+        cycle,
+        state,
+        config,
+        backend,
+        backend_op_name="add",
+        opcode_label="vadd",
+    )
+
+
+def _plan_vmul(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    _scoreboard: "Scoreboard",
+    backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    return _plan_vector_binary_elementwise(
+        instruction,
+        cycle,
+        state,
+        config,
+        backend,
+        backend_op_name="mul",
+        opcode_label="vmul",
     )
 
 
@@ -1202,6 +1242,7 @@ def build_rv32i_semantics_registry() -> SemanticsRegistry:
     registry.register("tload", _plan_tload)
     registry.register("tstore", _plan_tstore)
     registry.register("vadd", _plan_vadd)
+    registry.register("vmul", _plan_vmul)
     registry.register("vrelu", _plan_vrelu)
     registry.register("vreduce_sum", _plan_vreduce_sum)
     registry.register("matmul", _plan_matmul)
