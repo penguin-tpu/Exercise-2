@@ -87,3 +87,60 @@ class TestWorkloadBuilders:
         assert unpack_int32(engine.state.dram.read(0x380, 16)) == (19, 22, 43, 50)
         assert stats["mxu.issued_ops"] == 1
         assert stats["stall_fence"] >= 1
+
+    def test_staged_vector_add_smoke_builder_executes_end_to_end(self) -> None:
+        """The staged vector-add builder should DMA through scratchpad before compute."""
+        problem = KernelProblem(
+            name="staged-vector-add",
+            input_shapes=((2, 2), (2, 2)),
+            output_shape=(2, 2),
+        )
+        config = self.make_config()
+        program = ProgramBuilder(base_address=0x1000).build_staged_vector_add_smoke_test(
+            problem=problem,
+            lhs_address=0x200,
+            rhs_address=0x240,
+            output_address=0x280,
+            dtype="int32",
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+        engine = SimulatorEngine(config=config, program=program)
+        engine.state.dram.write(0x200, pack_int32([1, 2, 3, 4]))
+        engine.state.dram.write(0x240, pack_int32([5, 6, 7, 8]))
+
+        stats = engine.run(max_cycles=400).snapshot()
+
+        assert engine.state.halted
+        assert unpack_int32(engine.state.dram.read(0x280, 16)) == (6, 8, 10, 12)
+        assert stats["dma.issued_ops"] == 3
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_staged_matmul_smoke_builder_executes_end_to_end(self) -> None:
+        """The staged matmul builder should DMA through scratchpad before compute."""
+        problem = KernelProblem(
+            name="staged-matmul",
+            input_shapes=((2, 2), (2, 2)),
+            output_shape=(2, 2),
+        )
+        config = self.make_config()
+        program = ProgramBuilder(base_address=0x1000).build_staged_matmul_smoke_test(
+            problem=problem,
+            lhs_address=0x300,
+            rhs_address=0x340,
+            output_address=0x380,
+            acc_dtype="int32",
+            out_dtype="int32",
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+        engine = SimulatorEngine(config=config, program=program)
+        engine.state.dram.write(0x300, pack_int32([1, 2, 3, 4]))
+        engine.state.dram.write(0x340, pack_int32([5, 6, 7, 8]))
+
+        stats = engine.run(max_cycles=400).snapshot()
+
+        assert engine.state.halted
+        assert unpack_int32(engine.state.dram.read(0x380, 16)) == (19, 22, 43, 50)
+        assert stats["dma.issued_ops"] == 3
+        assert stats["mxu.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1

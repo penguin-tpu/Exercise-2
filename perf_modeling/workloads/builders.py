@@ -8,6 +8,24 @@ from perf_modeling.isa.instruction import Instruction
 from perf_modeling.program import Program
 from perf_modeling.workloads.kernels import KernelProblem
 
+DTYPE_BYTES = {
+    "int8": 1,
+    "int16": 2,
+    "int32": 4,
+    "float16": 2,
+    "float32": 4,
+}
+
+
+def _tensor_payload_bytes(shape: tuple[int, ...], dtype: str) -> int:
+    """Return the byte size of one tensor payload."""
+    if dtype not in DTYPE_BYTES:
+        raise ValueError(f"Unsupported staged workload dtype {dtype!r}.")
+    elements = 1
+    for dimension in shape:
+        elements *= dimension
+    return elements * DTYPE_BYTES[dtype]
+
 
 @dataclass
 class ProgramBuilder:
@@ -181,6 +199,54 @@ class ProgramBuilder:
             .build(name=f"{problem.name}-vector-add-smoke")
         )
 
+    def build_staged_vector_add_smoke_test(
+        self,
+        problem: KernelProblem,
+        lhs_address: int,
+        rhs_address: int,
+        output_address: int,
+        dtype: str,
+        scratchpad_base_address: int,
+    ) -> Program:
+        """Construct a DMA-to-scratchpad vector-add smoke test."""
+        if len(problem.input_shapes) != 2:
+            raise ValueError("Vector-add smoke tests expect exactly two input tensors.")
+        if problem.input_shapes[0] != problem.input_shapes[1]:
+            raise ValueError("Vector-add smoke tests expect matching input shapes.")
+        if problem.output_shape != problem.input_shapes[0]:
+            raise ValueError("Vector-add smoke-test output shape must match the input tensors.")
+        payload_bytes = _tensor_payload_bytes(problem.output_shape, dtype)
+        lhs_scratch_address = scratchpad_base_address
+        rhs_scratch_address = lhs_scratch_address + payload_bytes
+        output_scratch_address = rhs_scratch_address + payload_bytes
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_dma_copy(
+                source_address=lhs_address,
+                dest_address=lhs_scratch_address,
+                num_bytes=payload_bytes,
+            )
+            .emit_dma_copy(
+                source_address=rhs_address,
+                dest_address=rhs_scratch_address,
+                num_bytes=payload_bytes,
+            )
+            .emit("fence")
+            .emit_tensor_load(dest_tensor=0, address=lhs_scratch_address, shape=problem.input_shapes[0], dtype=dtype)
+            .emit_tensor_load(dest_tensor=1, address=rhs_scratch_address, shape=problem.input_shapes[1], dtype=dtype)
+            .emit_vector_add(dest_tensor=2, lhs_tensor=0, rhs_tensor=1, out_dtype=dtype)
+            .emit_tensor_store(source_tensor=2, address=output_scratch_address)
+            .emit("fence")
+            .emit_dma_copy(
+                source_address=output_scratch_address,
+                dest_address=output_address,
+                num_bytes=payload_bytes,
+            )
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-vector-add-staged-smoke")
+        )
+
     def build_matmul_smoke_test(
         self,
         problem: KernelProblem,
@@ -216,4 +282,65 @@ class ProgramBuilder:
             .emit("fence")
             .emit("ebreak")
             .build(name=f"{problem.name}-matmul-smoke")
+        )
+
+    def build_staged_matmul_smoke_test(
+        self,
+        problem: KernelProblem,
+        lhs_address: int,
+        rhs_address: int,
+        output_address: int,
+        acc_dtype: str,
+        out_dtype: str,
+        scratchpad_base_address: int,
+    ) -> Program:
+        """Construct a DMA-to-scratchpad matmul smoke test."""
+        if len(problem.input_shapes) != 2:
+            raise ValueError("Matmul smoke tests expect exactly two input tensors.")
+        lhs_shape = problem.input_shapes[0]
+        rhs_shape = problem.input_shapes[1]
+        if len(lhs_shape) != 2 or len(rhs_shape) != 2:
+            raise ValueError("Matmul smoke tests expect rank-2 input tensors.")
+        if lhs_shape[1] != rhs_shape[0]:
+            raise ValueError("Matmul smoke tests expect compatible matrix inner dimensions.")
+        if problem.output_shape != (lhs_shape[0], rhs_shape[1]):
+            raise ValueError("Matmul smoke-test output shape must match matrix multiplication semantics.")
+        lhs_bytes = _tensor_payload_bytes(lhs_shape, out_dtype)
+        rhs_bytes = _tensor_payload_bytes(rhs_shape, out_dtype)
+        output_bytes = _tensor_payload_bytes(problem.output_shape, out_dtype)
+        lhs_scratch_address = scratchpad_base_address
+        rhs_scratch_address = lhs_scratch_address + lhs_bytes
+        output_scratch_address = rhs_scratch_address + rhs_bytes
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_dma_copy(
+                source_address=lhs_address,
+                dest_address=lhs_scratch_address,
+                num_bytes=lhs_bytes,
+            )
+            .emit_dma_copy(
+                source_address=rhs_address,
+                dest_address=rhs_scratch_address,
+                num_bytes=rhs_bytes,
+            )
+            .emit("fence")
+            .emit_tensor_load(dest_tensor=0, address=lhs_scratch_address, shape=lhs_shape, dtype=out_dtype)
+            .emit_tensor_load(dest_tensor=1, address=rhs_scratch_address, shape=rhs_shape, dtype=out_dtype)
+            .emit_matmul(
+                dest_tensor=2,
+                lhs_tensor=0,
+                rhs_tensor=1,
+                acc_dtype=acc_dtype,
+                out_dtype=out_dtype,
+            )
+            .emit_tensor_store(source_tensor=2, address=output_scratch_address)
+            .emit("fence")
+            .emit_dma_copy(
+                source_address=output_scratch_address,
+                dest_address=output_address,
+                num_bytes=output_bytes,
+            )
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-matmul-staged-smoke")
         )
