@@ -143,6 +143,28 @@ class TestRunSimCLI:
         assert "report latency opcode=addi" in result.stdout
         assert "report latency opcode=ecall" not in result.stdout
 
+    def test_run_sim_applies_report_match(self) -> None:
+        """The CLI should honor `--report-match` for multi-row reports."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        result = subprocess.run(
+            [
+                "python3",
+                str(script),
+                "--report",
+                "latency",
+                "--report-match",
+                "ecall",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+            cwd=repo_root,
+        )
+
+        assert "report latency opcode=ecall" in result.stdout
+        assert "report latency opcode=addi" not in result.stdout
+
     def test_emit_report_prints_memory_and_contention_views(self, capsys: object) -> None:
         """The report helper should print curated memory, contention, unit, and ISA views from flat stats."""
         stats = {
@@ -273,3 +295,18 @@ class TestRunSimCLI:
 
         assert "report latency opcode=dma_copy" in captured.out
         assert "report latency opcode=addi" not in captured.out
+
+    def test_emit_report_respects_report_match(self, capsys: object) -> None:
+        """Multi-row reports should honor the optional report-match argument."""
+        stats = {
+            "dram.bytes_read": 64,
+            "scratchpad.bytes_written": 32,
+            "scratchpad.bytes_read": 16,
+        }
+
+        emit_report("memory", stats, report_match="scratchpad")
+        captured = capsys.readouterr()
+
+        assert "report memory key=scratchpad.bytes_read value=16 pct=100.00" in captured.out
+        assert "report memory key=scratchpad.bytes_written value=32 pct=100.00" in captured.out
+        assert "report memory key=dram.bytes_read" not in captured.out

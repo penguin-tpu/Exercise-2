@@ -36,7 +36,19 @@ def _format_per_cycle(count: int, cycles: int) -> str:
     return f"{count / cycles:.2f}"
 
 
-def emit_report(report_name: str, stats: dict[str, int], report_limit: int | None = None) -> None:
+def _matches_report_filter(value: str, report_match: str | None) -> bool:
+    """Return whether one report field matches the optional substring filter."""
+    if report_match is None or report_match == "":
+        return True
+    return report_match.lower() in value.lower()
+
+
+def emit_report(
+    report_name: str,
+    stats: dict[str, int],
+    report_limit: int | None = None,
+    report_match: str | None = None,
+) -> None:
     """Print one curated report from the flattened stats snapshot."""
     if report_name == "summary":
         cycles = stats.get("cycles", 0)
@@ -127,6 +139,8 @@ def emit_report(report_name: str, stats: dict[str, int], report_limit: int | Non
         sample_keys = sorted(key for key in stats if key.startswith("latency.") and key.endswith(".samples"))
         for key in sample_keys:
             opcode = key.removeprefix("latency.").removesuffix(".samples")
+            if not _matches_report_filter(opcode, report_match):
+                continue
             samples = stats[key]
             total_cycles = stats.get(f"latency.{opcode}.total_cycles", 0)
             max_cycles = stats.get(f"latency.{opcode}.max_cycles", 0)
@@ -144,6 +158,8 @@ def emit_report(report_name: str, stats: dict[str, int], report_limit: int | Non
         occupancy_by_unit: dict[str, list[tuple[int, int]]] = {}
         for key in occupancy_keys:
             unit_name, _, depth = key.partition(".queue_occupancy.")
+            if not _matches_report_filter(unit_name, report_match):
+                continue
             occupancy_by_unit.setdefault(unit_name, []).append((int(depth), stats[key]))
         for unit_name in sorted(occupancy_by_unit):
             samples = sum(count for _, count in occupancy_by_unit[unit_name])
@@ -162,6 +178,8 @@ def emit_report(report_name: str, stats: dict[str, int], report_limit: int | Non
     if report_name == "memory":
         read_keys = sorted(key for key in stats if key.endswith(".bytes_read"))
         write_keys = sorted(key for key in stats if key.endswith(".bytes_written"))
+        read_keys = [key for key in read_keys if _matches_report_filter(key, report_match)]
+        write_keys = [key for key in write_keys if _matches_report_filter(key, report_match)]
         total_read = sum(stats[key] for key in read_keys)
         total_write = sum(stats[key] for key in write_keys)
         print(f"report memory_summary direction=read total_bytes={total_read}")
@@ -192,6 +210,7 @@ def emit_report(report_name: str, stats: dict[str, int], report_limit: int | Non
             or key.startswith("scratchpad.bank_conflict.")
             or key.startswith("scratchpad.port_conflict.")
         }
+        contention_keys = [key for key in contention_keys if _matches_report_filter(key, report_match)]
         resource_total = sum(stats[key] for key in resource_keys)
         print(f"report contention_summary family=stall total={stall_total}")
         print(f"report contention_summary family=resource total={resource_total}")
@@ -207,6 +226,7 @@ def emit_report(report_name: str, stats: dict[str, int], report_limit: int | Non
         return
     if report_name == "stalls":
         stall_keys = sorted(key for key in stats if key.startswith("stall_"))
+        stall_keys = [key for key in stall_keys if _matches_report_filter(key, report_match)]
         total_stalls = sum(stats[key] for key in stall_keys)
         print(f"report stalls_summary total={total_stalls} categories={len(stall_keys)}")
         if report_limit is not None:
@@ -237,6 +257,7 @@ def emit_report(report_name: str, stats: dict[str, int], report_limit: int | Non
                 if key.endswith(".busy_cycles")
             }
         )
+        unit_names = [unit_name for unit_name in unit_names if _matches_report_filter(unit_name, report_match)]
         if report_limit is not None:
             unit_names = sorted(
                 unit_names,
@@ -253,6 +274,8 @@ def emit_report(report_name: str, stats: dict[str, int], report_limit: int | Non
         sample_keys = sorted(key for key in stats if key.startswith("latency.") and key.endswith(".samples"))
         for key in sample_keys:
             opcode = key.removeprefix("latency.").removesuffix(".samples")
+            if not _matches_report_filter(opcode, report_match):
+                continue
             samples = stats[key]
             total_cycles = stats.get(f"latency.{opcode}.total_cycles", 0)
             rows.append((total_cycles, opcode, samples))
@@ -318,6 +341,12 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Optional maximum number of detail rows to print for each multi-row report.",
     )
+    parser.add_argument(
+        "--report-match",
+        type=str,
+        default=None,
+        help="Optional case-insensitive substring filter for multi-row report entries.",
+    )
     return parser.parse_args()
 
 
@@ -355,7 +384,12 @@ def main() -> None:
         for record in engine.trace.records[-args.print_trace_limit :]:
             print(f"trace cycle={record.cycle} kind={record.kind} message={record.message}")
     for report_name in args.report:
-        emit_report(report_name, stats, report_limit=args.report_limit if args.report_limit > 0 else None)
+        emit_report(
+            report_name,
+            stats,
+            report_limit=args.report_limit if args.report_limit > 0 else None,
+            report_match=args.report_match,
+        )
     if args.stats_json is not None:
         stats_payload = {
             "program": program.name,
