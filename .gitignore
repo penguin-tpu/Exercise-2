@@ -8,3 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Repo-local toolchain downloads
+toolchains/riscv32/downloads/
+toolchains/riscv32/gnu-binutils/

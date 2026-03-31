@@ -1,22 +1,24 @@
-# RV32I Local Toolchain
+# RV32I GNU Toolchain
 
-This directory contains a minimal local RV32I build path that works in the current environment without a dedicated RISC-V linker.
+This directory contains the repo-local RV32I build path used by the simulator tests and scripts.
 
 ## What It Does
 
-- assembles self-contained RV32I assembly with `clang`
-- extracts the assembled `.text` bytes from the relocatable ELF object
-- wraps those bytes into a minimal executable ELF32 image
+- resolves GNU RISC-V binutils from `toolchains/riscv32/gnu-binutils/` or the host `PATH`
+- bootstraps `binutils-riscv64-unknown-elf` under `toolchains/riscv32/` without root when the tools are missing
+- assembles RV32I sources with `riscv64-unknown-elf-as`
+- links executable ELF32 images with `riscv64-unknown-elf-ld`
 
 ## Current Limits
 
-- this path is intended for self-contained `.S` files
-- it does not perform full ELF linking
-- it rejects relocation sections, so cross-section and unresolved-symbol workflows are out of scope for now
+- this path is intended for freestanding RV32I assembly programs
+- it assumes an `_start` symbol as the program entry point
+- it does not ship a full libc, startup files, or a C compiler
 
 ## Example
 
 ```bash
+python3 toolchains/riscv32/bootstrap_gnu_binutils.py
 python3 toolchains/riscv32/assemble_to_elf.py program.S --output build/program.elf
 uv run python scripts/run_sim.py build/program.elf
 ```

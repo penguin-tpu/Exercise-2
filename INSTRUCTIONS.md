@@ -1,3 +1,5 @@
 -[x] move the user-level entry scripts to under ./scripts/
 -[x] properly set up RISC-V toolchain under ./toolchains/, compile programs with them, and generate ELF files that are consumed by the perf model.
 -[x] refactor scripts in tests/ to use `pytest` to perform tests
+-[x] add the RISC-V ISA test under tests/isa/. The source can be found at https://github.com/riscv-software-src/riscv-tests/tree/master/isa/rv32ui. Do not directly copy/clone the repo. Instead, rewrite it and only include relavant (base RV32I) tests in.
+-[x] do not use clang as toolchain. Setup toolchain using https://github.com/riscv-collab/riscv-gnu-toolchain.

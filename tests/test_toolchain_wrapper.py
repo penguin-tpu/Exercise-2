@@ -1,4 +1,4 @@
-"""Integration tests for the local RV32I toolchain wrapper."""
+"""Integration tests for the GNU RV32I toolchain wrapper."""
 
 from __future__ import annotations
 
@@ -12,22 +12,17 @@ from perf_modeling.engine import SimulatorEngine
 
 
 class TestToolchainWrapper:
-    """Verify the no-linker RV32I wrapper under `toolchains/`."""
+    """Verify the GNU-binutils-backed RV32I wrapper under `toolchains/`."""
 
-    def test_assemble_to_elf_generates_simulator_consumable_binary(self) -> None:
-        """The wrapper should assemble a small RV32I program into a runnable ELF."""
+    def build_and_run(self, assembly_source: str, max_cycles: int = 100) -> SimulatorEngine:
+        """Assemble one RV32I program through the wrapper and run it in the simulator."""
         repo_root = Path(__file__).resolve().parent.parent
         script = repo_root / "toolchains" / "riscv32" / "assemble_to_elf.py"
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             source = temp_path / "program.S"
             output = temp_path / "program.elf"
-            source.write_text(
-                ".globl _start\n"
-                "_start:\n"
-                "  addi a0, x0, 5\n"
-                "  ebreak\n"
-            )
+            source.write_text(assembly_source)
             subprocess.run(
                 [
                     "python3",
@@ -52,6 +47,47 @@ class TestToolchainWrapper:
                 ),
                 program=program,
             )
-            engine.run(max_cycles=50)
-            assert engine.state.halted
-            assert engine.state.exit_code == 5
+            engine.run(max_cycles=max_cycles)
+            return engine
+
+    def test_assemble_to_elf_generates_simulator_consumable_binary(self) -> None:
+        """The wrapper should assemble a small RV32I program into a runnable ELF."""
+        engine = self.build_and_run(
+            ".globl _start\n"
+            "_start:\n"
+            "  addi a0, x0, 5\n"
+            "  ebreak\n"
+        )
+        assert engine.state.halted
+        assert engine.state.exit_code == 5
+
+    def test_assemble_to_elf_handles_local_labels_and_branch_loops(self) -> None:
+        """The wrapper should support self-contained assembly with local control flow."""
+        engine = self.build_and_run(
+            ".globl _start\n"
+            "_start:\n"
+            "  addi t0, x0, 5\n"
+            "  addi t1, x0, 0\n"
+            "loop:\n"
+            "  add t1, t1, t0\n"
+            "  addi t0, t0, -1\n"
+            "  bne t0, x0, loop\n"
+            "  addi a0, t1, 0\n"
+            "  ebreak\n"
+        )
+        assert engine.state.halted
+        assert engine.state.exit_code == 15
+
+    def test_assemble_to_elf_handles_scratchpad_mapped_load_store(self) -> None:
+        """The wrapper should generate ELFs that exercise the scratchpad memory window."""
+        engine = self.build_and_run(
+            ".globl _start\n"
+            "_start:\n"
+            "  lui t0, 0x20000\n"
+            "  addi t1, x0, 52\n"
+            "  sw t1, 0(t0)\n"
+            "  lw a0, 0(t0)\n"
+            "  ebreak\n"
+        )
+        assert engine.state.halted
+        assert engine.state.exit_code == 52
