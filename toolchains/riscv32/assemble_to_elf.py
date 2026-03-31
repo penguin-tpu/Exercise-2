@@ -33,7 +33,7 @@ def compile_to_elf(source: Path, output: Path, compiler: Path, base_address: int
     subprocess.run(
         [
             str(compiler),
-            "-march=rv32i",
+            "-march=rv32i_zicsr",
             "-mabi=ilp32",
             "-nostdlib",
             "-Wl,--no-relax",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 from perf_modeling.config import AcceleratorConfig, DRAMConfig
@@ -14,7 +15,23 @@ from perf_modeling.engine import SimulatorEngine
 class TestToolchainWrapper:
     """Verify the GNU-binutils-backed RV32I wrapper under `toolchains/`."""
 
-    def build_and_run(self, assembly_source: str, max_cycles: int = 100) -> SimulatorEngine:
+    def make_config(self) -> AcceleratorConfig:
+        """Construct a compact configuration for toolchain-wrapper integration tests."""
+        return AcceleratorConfig(
+            dram=DRAMConfig(
+                capacity_bytes=1 << 20,
+                read_latency_cycles=3,
+                write_latency_cycles=3,
+                bytes_per_cycle=16,
+            )
+        )
+
+    def build_and_run(
+        self,
+        assembly_source: str,
+        max_cycles: int = 100,
+        config: AcceleratorConfig | None = None,
+    ) -> SimulatorEngine:
         """Assemble one RV32I program through the wrapper and run it in the simulator."""
         repo_root = Path(__file__).resolve().parent.parent
         script = repo_root / "toolchains" / "riscv32" / "assemble_to_elf.py"
@@ -37,14 +54,7 @@ class TestToolchainWrapper:
             )
             program = Decoder().decode_bytes(output.read_bytes(), name="toolchain-wrapper")
             engine = SimulatorEngine(
-                config=AcceleratorConfig(
-                    dram=DRAMConfig(
-                        capacity_bytes=1 << 20,
-                        read_latency_cycles=3,
-                        write_latency_cycles=3,
-                        bytes_per_cycle=16,
-                    )
-                ),
+                config=config if config is not None else self.make_config(),
                 program=program,
             )
             engine.run(max_cycles=max_cycles)
@@ -129,3 +139,31 @@ class TestToolchainWrapper:
         )
         assert engine.state.halted
         assert engine.state.exit_code == 11
+
+    def test_assemble_to_elf_runs_trap_handler_and_mret_flow(self) -> None:
+        """The wrapper should support ELF programs that install trap handlers and return with `mret`."""
+        machine = replace(
+            self.make_config().machine,
+            halt_on_ecall=False,
+            enable_trap_handlers=True,
+        )
+        engine = self.build_and_run(
+            ".section .text\n"
+            ".globl _start\n"
+            "_start:\n"
+            "  la t0, handler\n"
+            "  csrw mtvec, t0\n"
+            "  ecall\n"
+            "  addi a0, t2, 2\n"
+            "  ebreak\n"
+            "handler:\n"
+            "  csrr t2, mcause\n"
+            "  csrr t1, mepc\n"
+            "  addi t1, t1, 4\n"
+            "  csrw mepc, t1\n"
+            "  mret\n",
+            max_cycles=200,
+            config=replace(self.make_config(), machine=machine),
+        )
+        assert engine.state.halted
+        assert engine.state.exit_code == 13
