@@ -129,6 +129,7 @@ You can also package a grouped sweep experiment into one manifest:
 {
   "program": "tests/workload/scalar_int_matmul.S",
   "sweep_configs": ["baseline", "tiny_debug"],
+  "sweep_reports": ["summary", "delta"],
   "sweep_sort": "cycles",
   "sweep_desc": true,
   "sweep_limit": 2,

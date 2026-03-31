@@ -270,6 +270,7 @@ def validate_args(
     parser: argparse.ArgumentParser,
     effective_sweep_configs: list[str],
     effective_sweep_limit: int,
+    effective_sweep_reports: list[str],
     effective_print_stats_prefixes: list[str],
     effective_print_trace_limit: int,
     effective_report_names: list[str],
@@ -291,7 +292,7 @@ def validate_args(
         parser.error("--sweep-json requires at least one --sweep-config entry.")
     if effective_sweep_csv is not None and not effective_sweep_configs:
         parser.error("--sweep-csv requires at least one --sweep-config entry.")
-    if args.sweep_report and not effective_sweep_configs:
+    if effective_sweep_reports and not effective_sweep_configs:
         parser.error("--sweep-report requires at least one --sweep-config entry.")
     if not effective_sweep_configs:
         return
@@ -370,6 +371,9 @@ def main() -> None:
     effective_sweep_configs = list(args.sweep_config)
     if not effective_sweep_configs and experiment_manifest is not None:
         effective_sweep_configs = list(experiment_manifest.sweep_configs)
+    effective_sweep_reports = list(args.sweep_report)
+    if not effective_sweep_reports and experiment_manifest is not None:
+        effective_sweep_reports = list(experiment_manifest.sweep_reports)
     effective_sweep_sort = args.sweep_sort
     if effective_sweep_sort == "config" and experiment_manifest is not None and experiment_manifest.sweep_sort is not None:
         effective_sweep_sort = experiment_manifest.sweep_sort
@@ -453,6 +457,7 @@ def main() -> None:
         parser,
         effective_sweep_configs,
         effective_sweep_limit,
+        effective_sweep_reports,
         effective_print_stats_prefixes,
         effective_print_trace_limit,
         effective_report_names,
@@ -523,7 +528,7 @@ def main() -> None:
             print(
                 f"sweep rank={index} config={result['config']} sort={effective_sweep_sort} sort_value={sort_value} cycles={result['cycles']} retired={pipeline['retired']} halted={result['halted']} exit_code={result['exit_code']} busiest_unit={busiest_unit['name']}"
             )
-        for report_name in args.sweep_report:
+        for report_name in effective_sweep_reports:
             emit_sweep_report(
                 report_name,
                 sweep_results,

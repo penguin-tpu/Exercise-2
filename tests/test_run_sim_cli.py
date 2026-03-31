@@ -1195,6 +1195,41 @@ class TestRunSimCLI:
         assert "sweep report delta_reference config=tiny_debug sort=cycles sort_value=4" in result.stdout
         assert "sweep report delta config=baseline ref=tiny_debug cycles_delta=-1 retired_delta=0 fetch_stall_delta=-1 latency_avg_delta=-1.00" in result.stdout
 
+    def test_run_sim_loads_sweep_reports_from_experiment_manifest(self) -> None:
+        """A grouped sweep manifest should be able to own comparative sweep report selection."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            manifest_path = temp_path / "experiment.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "sweep_configs": ["baseline", "tiny_debug"],
+                        "sweep_sort": "cycles",
+                        "sweep_desc": True,
+                        "sweep_reports": ["summary", "delta"],
+                    }
+                )
+            )
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    "--experiment-json",
+                    str(manifest_path),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+
+        assert "sweep report summary configs=2 sort=cycles descending=True limit=none" in result.stdout
+        assert "sweep report delta_reference config=tiny_debug sort=cycles sort_value=4" in result.stdout
+
     def test_run_sim_prints_filtered_stats_and_trace_tail(self) -> None:
         """The CLI should print filtered stat families and a bounded trace tail on request."""
         repo_root = Path(__file__).resolve().parent.parent

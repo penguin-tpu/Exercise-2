@@ -41,6 +41,8 @@ class ExperimentManifest:
     """Optional single-run retained-trace tail length printed to stdout."""
     sweep_configs: tuple[str, ...]
     """Ordered named configs included in the sweep."""
+    sweep_reports: tuple[str, ...]
+    """Ordered sweep comparative reports selected by the manifest."""
     sweep_sort: str | None
     """Optional sweep ranking metric."""
     sweep_desc: bool | None
@@ -143,6 +145,10 @@ def load_experiment_manifest(manifest_path: Path) -> ExperimentManifest:
     if not isinstance(sweep_configs_value, list):
         raise ValueError("sweep_configs must be a JSON array when present.")
     sweep_configs = tuple(str(config_name) for config_name in sweep_configs_value)
+    sweep_reports_value = payload.get("sweep_reports", [])
+    if not isinstance(sweep_reports_value, list):
+        raise ValueError("sweep_reports must be a JSON array when present.")
+    sweep_reports = tuple(str(report_name) for report_name in sweep_reports_value)
     config = None
     if "config" in payload:
         config = str(payload["config"])
@@ -216,6 +222,7 @@ def load_experiment_manifest(manifest_path: Path) -> ExperimentManifest:
         print_stats_prefixes=print_stats_prefixes,
         print_trace_limit=print_trace_limit,
         sweep_configs=sweep_configs,
+        sweep_reports=sweep_reports,
         sweep_sort=sweep_sort,
         sweep_desc=sweep_desc,
         sweep_limit=sweep_limit,
