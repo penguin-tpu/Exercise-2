@@ -51,6 +51,8 @@ def build_two_layer_mlp_from_torch_sequential(
     data_address: int = 0x400,
     acc_dtype: str = "float32",
     out_dtype: str = "float32",
+    staged: bool = False,
+    scratchpad_base_address: int | None = None,
 ) -> TorchWorkloadBundle:
     """Lower a simple Linear-ReLU-Linear Torch model into a simulator workload."""
     if len(model) != 3:
@@ -61,6 +63,8 @@ def build_two_layer_mlp_from_torch_sequential(
         raise ValueError("Torch lowering currently expects both Linear layers to include bias.")
     if input_tensor.ndim != 2:
         raise ValueError("Torch lowering currently expects a rank-2 input tensor.")
+    if staged and scratchpad_base_address is None:
+        raise ValueError("Torch lowering requires a scratchpad base address in staged mode.")
 
     input_value = input_tensor.detach().to(dtype=torch.float32).contiguous()
     weight0_value = model[0].weight.detach().to(dtype=torch.float32).transpose(0, 1).contiguous()
@@ -93,17 +97,31 @@ def build_two_layer_mlp_from_torch_sequential(
     bias1_address = _align_address(weight1_address + len(weight1_blob))
     output_address = _align_address(bias1_address + len(bias1_blob))
 
-    program = ProgramBuilder(base_address=base_address).build_two_layer_mlp_smoke_test(
-        problem=problem,
-        input_address=input_address,
-        weight0_address=weight0_address,
-        bias0_address=bias0_address,
-        weight1_address=weight1_address,
-        bias1_address=bias1_address,
-        output_address=output_address,
-        acc_dtype=acc_dtype,
-        out_dtype=out_dtype,
-    )
+    if staged:
+        program = ProgramBuilder(base_address=base_address).build_staged_two_layer_mlp_smoke_test(
+            problem=problem,
+            input_address=input_address,
+            weight0_address=weight0_address,
+            bias0_address=bias0_address,
+            weight1_address=weight1_address,
+            bias1_address=bias1_address,
+            output_address=output_address,
+            acc_dtype=acc_dtype,
+            out_dtype=out_dtype,
+            scratchpad_base_address=int(scratchpad_base_address),
+        )
+    else:
+        program = ProgramBuilder(base_address=base_address).build_two_layer_mlp_smoke_test(
+            problem=problem,
+            input_address=input_address,
+            weight0_address=weight0_address,
+            bias0_address=bias0_address,
+            weight1_address=weight1_address,
+            bias1_address=bias1_address,
+            output_address=output_address,
+            acc_dtype=acc_dtype,
+            out_dtype=out_dtype,
+        )
 
     expected = model(input_value).detach().to(dtype=torch.float32).reshape(-1).tolist()
     return TorchWorkloadBundle(
