@@ -15,6 +15,35 @@ from perf_modeling import AcceleratorConfig, SimulatorEngine
 from perf_modeling.decode import Decoder
 
 
+def _format_average(total_cycles: int, samples: int) -> str:
+    """Format one average-latency value for human-readable reports."""
+    if samples <= 0:
+        return "0.00"
+    return f"{total_cycles / samples:.2f}"
+
+
+def emit_report(report_name: str, stats: dict[str, int]) -> None:
+    """Print one curated report from the flattened stats snapshot."""
+    if report_name == "latency":
+        sample_keys = sorted(key for key in stats if key.startswith("latency.") and key.endswith(".samples"))
+        for key in sample_keys:
+            opcode = key.removeprefix("latency.").removesuffix(".samples")
+            samples = stats[key]
+            total_cycles = stats.get(f"latency.{opcode}.total_cycles", 0)
+            max_cycles = stats.get(f"latency.{opcode}.max_cycles", 0)
+            print(
+                f"report latency opcode={opcode} samples={samples} total_cycles={total_cycles} max_cycles={max_cycles} avg_cycles={_format_average(total_cycles, samples)}"
+            )
+        return
+    if report_name == "occupancy":
+        occupancy_keys = sorted(key for key in stats if ".queue_occupancy." in key)
+        for key in occupancy_keys:
+            unit_name, _, depth = key.partition(".queue_occupancy.")
+            print(f"report occupancy unit={unit_name} depth={depth} samples={stats[key]}")
+        return
+    raise ValueError(f"Unsupported report {report_name!r}.")
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Execute a bare-metal RV32I binary in the simulator.")
@@ -55,6 +84,13 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Print the last N retained trace records after the summary.",
     )
+    parser.add_argument(
+        "--report",
+        action="append",
+        choices=("latency", "occupancy"),
+        default=[],
+        help="Print a curated report for one stats family. May be repeated.",
+    )
     return parser.parse_args()
 
 
@@ -91,6 +127,8 @@ def main() -> None:
     if args.print_trace_limit > 0:
         for record in engine.trace.records[-args.print_trace_limit :]:
             print(f"trace cycle={record.cycle} kind={record.kind} message={record.message}")
+    for report_name in args.report:
+        emit_report(report_name, stats)
     if args.stats_json is not None:
         stats_payload = {
             "program": program.name,
