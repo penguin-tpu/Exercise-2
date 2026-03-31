@@ -51,11 +51,19 @@ def _matches_report_filter(value: str, report_match: str | None) -> bool:
     return report_match.lower() in value.lower()
 
 
-def _prepare_output_path(path_text: str) -> Path:
+def _path_is_under_directory(path: Path, directory: Path) -> bool:
+    """Return whether one relative path already begins under the selected output directory."""
+    if len(path.parts) < len(directory.parts):
+        return False
+    return path.parts[: len(directory.parts)] == directory.parts
+
+
+def _prepare_output_path(path_text: str, output_dir: str) -> Path:
     """Create parent directories for one file output target and return the normalized path."""
     path = Path(path_text)
-    if not path.is_absolute() and path.parent == Path("."):
-        path = Path("out") / path
+    output_root = Path(output_dir)
+    if not path.is_absolute() and not _path_is_under_directory(path, output_root):
+        path = output_root / path
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -432,6 +440,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional case-insensitive substring filter for multi-row report entries.",
     )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="out",
+        help="Base directory used for relative artifact outputs.",
+    )
     return parser.parse_args()
 
 
@@ -486,7 +500,7 @@ def main() -> None:
         if args.stats_json == "-":
             print(serialized)
         else:
-            _prepare_output_path(args.stats_json).write_text(serialized + "\n")
+            _prepare_output_path(args.stats_json, args.output_dir).write_text(serialized + "\n")
     if args.stats_csv is not None:
         rows = [("key", "value")]
         rows.extend((key, str(value)) for key, value in sorted(stats.items()))
@@ -494,7 +508,7 @@ def main() -> None:
             writer = csv.writer(sys.stdout)
             writer.writerows(rows)
         else:
-            with _prepare_output_path(args.stats_csv).open("w", newline="") as handle:
+            with _prepare_output_path(args.stats_csv, args.output_dir).open("w", newline="") as handle:
                 writer = csv.writer(handle)
                 writer.writerows(rows)
     if args.trace_json is not None:
@@ -510,7 +524,7 @@ def main() -> None:
         if args.trace_json == "-":
             print(serialized)
         else:
-            _prepare_output_path(args.trace_json).write_text(serialized + "\n")
+            _prepare_output_path(args.trace_json, args.output_dir).write_text(serialized + "\n")
     if args.trace_csv is not None:
         rows = [("cycle", "kind", "message")]
         rows.extend((str(record.cycle), record.kind, record.message) for record in engine.trace.records)
@@ -518,7 +532,7 @@ def main() -> None:
             writer = csv.writer(sys.stdout)
             writer.writerows(rows)
         else:
-            with _prepare_output_path(args.trace_csv).open("w", newline="") as handle:
+            with _prepare_output_path(args.trace_csv, args.output_dir).open("w", newline="") as handle:
                 writer = csv.writer(handle)
                 writer.writerows(rows)
     if args.scratchpad_dump is not None:
@@ -528,7 +542,7 @@ def main() -> None:
         else:
             size = engine.config.scratchpad.capacity_bytes - offset
         payload = engine.state.scratchpad.read(offset, size)
-        _prepare_output_path(args.scratchpad_dump).write_bytes(payload)
+        _prepare_output_path(args.scratchpad_dump, args.output_dir).write_bytes(payload)
     if args.dram_dump is not None:
         offset = args.dram_dump_offset
         if args.dram_dump_size > 0:
@@ -536,7 +550,7 @@ def main() -> None:
         else:
             size = engine.config.dram.capacity_bytes - offset
         payload = engine.state.dram.read(offset, size)
-        _prepare_output_path(args.dram_dump).write_bytes(payload)
+        _prepare_output_path(args.dram_dump, args.output_dir).write_bytes(payload)
 
 
 if __name__ == "__main__":
