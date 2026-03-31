@@ -121,6 +121,28 @@ class TestRunSimCLI:
         assert "report units unit=scalar issued_ops=2 busy_cycles=2 busy_pct=66.67 max_queue_occupancy=1" in result.stdout
         assert "report isa opcode=addi issued=1 total_cycles=1" in result.stdout
 
+    def test_run_sim_applies_report_limit(self) -> None:
+        """The CLI should honor `--report-limit` for multi-row reports."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        result = subprocess.run(
+            [
+                "python3",
+                str(script),
+                "--report",
+                "latency",
+                "--report-limit",
+                "1",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+            cwd=repo_root,
+        )
+
+        assert "report latency opcode=addi" in result.stdout
+        assert "report latency opcode=ecall" not in result.stdout
+
     def test_emit_report_prints_memory_and_contention_views(self, capsys: object) -> None:
         """The report helper should print curated memory, contention, unit, and ISA views from flat stats."""
         stats = {
@@ -234,3 +256,20 @@ class TestRunSimCLI:
         assert "report summary latency opcode=dma_copy avg_cycles=4.00 max_cycles=5" in captured.out
         assert "report summary memory key=dram.bytes_read total_bytes=64" in captured.out
         assert "report summary contention key=scratchpad.port_conflict.sp_read_port_0 value=3" in captured.out
+
+    def test_emit_report_respects_report_limit(self, capsys: object) -> None:
+        """Multi-row reports should honor the optional report-limit argument."""
+        stats = {
+            "latency.addi.samples": 3,
+            "latency.addi.total_cycles": 3,
+            "latency.addi.max_cycles": 1,
+            "latency.dma_copy.samples": 2,
+            "latency.dma_copy.total_cycles": 8,
+            "latency.dma_copy.max_cycles": 5,
+        }
+
+        emit_report("latency", stats, report_limit=1)
+        captured = capsys.readouterr()
+
+        assert "report latency opcode=dma_copy" in captured.out
+        assert "report latency opcode=addi" not in captured.out

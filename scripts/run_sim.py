@@ -36,7 +36,7 @@ def _format_per_cycle(count: int, cycles: int) -> str:
     return f"{count / cycles:.2f}"
 
 
-def emit_report(report_name: str, stats: dict[str, int]) -> None:
+def emit_report(report_name: str, stats: dict[str, int], report_limit: int | None = None) -> None:
     """Print one curated report from the flattened stats snapshot."""
     if report_name == "summary":
         cycles = stats.get("cycles", 0)
@@ -123,12 +123,18 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
         )
         return
     if report_name == "latency":
+        rows: list[tuple[int, str, int, int, int]] = []
         sample_keys = sorted(key for key in stats if key.startswith("latency.") and key.endswith(".samples"))
         for key in sample_keys:
             opcode = key.removeprefix("latency.").removesuffix(".samples")
             samples = stats[key]
             total_cycles = stats.get(f"latency.{opcode}.total_cycles", 0)
             max_cycles = stats.get(f"latency.{opcode}.max_cycles", 0)
+            rows.append((total_cycles, opcode, samples, max_cycles, total_cycles))
+        rows.sort(key=lambda row: (-row[0], row[1]))
+        if report_limit is not None:
+            rows = rows[:report_limit]
+        for _, opcode, samples, max_cycles, total_cycles in rows:
             print(
                 f"report latency opcode={opcode} samples={samples} total_cycles={total_cycles} max_cycles={max_cycles} avg_cycles={_format_average(total_cycles, samples)}"
             )
@@ -159,6 +165,9 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
         total_read = sum(stats[key] for key in read_keys)
         total_write = sum(stats[key] for key in write_keys)
         print(f"report memory_summary direction=read total_bytes={total_read}")
+        if report_limit is not None:
+            read_keys = sorted(read_keys, key=lambda key: (-stats[key], key))[:report_limit]
+            write_keys = sorted(write_keys, key=lambda key: (-stats[key], key))[:report_limit]
         for key in read_keys:
             print(
                 f"report memory key={key} value={stats[key]} pct={_format_percentage(stats[key], total_read)}"
@@ -186,6 +195,8 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
         resource_total = sum(stats[key] for key in resource_keys)
         print(f"report contention_summary family=stall total={stall_total}")
         print(f"report contention_summary family=resource total={resource_total}")
+        if report_limit is not None:
+            contention_keys = sorted(contention_keys, key=lambda key: (-stats[key], key))[:report_limit]
         for key in contention_keys:
             if key in resource_keys:
                 print(
@@ -198,6 +209,8 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
         stall_keys = sorted(key for key in stats if key.startswith("stall_"))
         total_stalls = sum(stats[key] for key in stall_keys)
         print(f"report stalls_summary total={total_stalls} categories={len(stall_keys)}")
+        if report_limit is not None:
+            stall_keys = sorted(stall_keys, key=lambda key: (-stats[key], key))[:report_limit]
         for key in stall_keys:
             print(f"report stalls key={key} value={stats[key]}")
         return
@@ -224,6 +237,11 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
                 if key.endswith(".busy_cycles")
             }
         )
+        if report_limit is not None:
+            unit_names = sorted(
+                unit_names,
+                key=lambda unit_name: (-stats.get(f"{unit_name}.busy_cycles", 0), unit_name),
+            )[:report_limit]
         for unit_name in unit_names:
             busy_cycles = stats.get(f"{unit_name}.busy_cycles", 0)
             print(
@@ -231,11 +249,17 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
             )
         return
     if report_name == "isa":
+        rows: list[tuple[int, str, int]] = []
         sample_keys = sorted(key for key in stats if key.startswith("latency.") and key.endswith(".samples"))
         for key in sample_keys:
             opcode = key.removeprefix("latency.").removesuffix(".samples")
             samples = stats[key]
             total_cycles = stats.get(f"latency.{opcode}.total_cycles", 0)
+            rows.append((total_cycles, opcode, samples))
+        rows.sort(key=lambda row: (-row[0], row[1]))
+        if report_limit is not None:
+            rows = rows[:report_limit]
+        for total_cycles, opcode, samples in rows:
             print(f"report isa opcode={opcode} issued={samples} total_cycles={total_cycles}")
         return
     raise ValueError(f"Unsupported report {report_name!r}.")
@@ -288,6 +312,12 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Print a curated report for one stats family. May be repeated.",
     )
+    parser.add_argument(
+        "--report-limit",
+        type=int,
+        default=0,
+        help="Optional maximum number of detail rows to print for each multi-row report.",
+    )
     return parser.parse_args()
 
 
@@ -325,7 +355,7 @@ def main() -> None:
         for record in engine.trace.records[-args.print_trace_limit :]:
             print(f"trace cycle={record.cycle} kind={record.kind} message={record.message}")
     for report_name in args.report:
-        emit_report(report_name, stats)
+        emit_report(report_name, stats, report_limit=args.report_limit if args.report_limit > 0 else None)
     if args.stats_json is not None:
         stats_payload = {
             "program": program.name,
