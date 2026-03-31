@@ -234,6 +234,51 @@ def _store_tensor_payload(value: object, dtype: str) -> bytes:
     return struct.pack("<" + DTYPE_STRUCT_FORMATS[dtype] * len(normalized), *normalized)
 
 
+def _memory_resource_reservation(
+    memory_name: str,
+    cycle: int,
+    completion_cycle: int,
+) -> ResourceReservation:
+    """Create one shared memory-layer reservation over an operation lifetime."""
+    return ResourceReservation(
+        resource_name=f"mem_{memory_name}",
+        start_cycle=cycle,
+        end_cycle=completion_cycle,
+    )
+
+
+def _scratchpad_bank_reservations(
+    state: "ArchState",
+    local_address: int,
+    size_bytes: int,
+    cycle: int,
+    completion_cycle: int,
+) -> list[ResourceReservation]:
+    """Create shared scratchpad-bank reservations for one local access range."""
+    return [
+        ResourceReservation(
+            resource_name=f"sp_bank_{bank_index}",
+            start_cycle=cycle,
+            end_cycle=completion_cycle,
+        )
+        for bank_index in state.scratchpad.bank_indices_for_range(local_address, size_bytes)
+    ]
+
+
+def _memory_access_reservations(
+    state: "ArchState",
+    memory_name: str,
+    local_address: int,
+    size_bytes: int,
+    cycle: int,
+    completion_cycle: int,
+) -> list[ResourceReservation]:
+    """Create shared reservations for one memory-layer access."""
+    if memory_name == state.scratchpad.name:
+        return _scratchpad_bank_reservations(state, local_address, size_bytes, cycle, completion_cycle)
+    return [_memory_resource_reservation(memory_name, cycle, completion_cycle)]
+
+
 def _require_tensor(state: "ArchState", index: int, pc: int, name: str) -> TensorValue:
     """Read one tensor register and raise an architectural trap when it is empty."""
     tensor_value = state.tensor_regs.read(index)
@@ -477,7 +522,7 @@ def _plan_load(
     address = _u32(state.scalar_regs.read(rs1) + imm)
     width, signed = LOAD_WIDTHS[instruction.opcode]
     _check_alignment(address, width, pc, config, "load")
-    memory, _local_address = state.resolve_memory(address, config)
+    memory, local_address = state.resolve_memory(address, config)
     if memory is state.scratchpad:
         latency = scratchpad_latency(config.scratchpad, width)
     else:
@@ -500,7 +545,8 @@ def _plan_load(
                 resource_name="load_store",
                 start_cycle=cycle,
                 end_cycle=completion_cycle,
-            )
+            ),
+            *_memory_access_reservations(state, memory.name, local_address, width, cycle, completion_cycle),
         ],
         on_complete=on_complete,
         description=f"{instruction.opcode} @ 0x{pc:08x}",
@@ -524,7 +570,7 @@ def _plan_store(
     value = state.scalar_regs.read(rs2)
     width = STORE_WIDTHS[instruction.opcode]
     _check_alignment(address, width, pc, config, "store")
-    memory, _local_address = state.resolve_memory(address, config)
+    memory, local_address = state.resolve_memory(address, config)
     if memory is state.scratchpad:
         latency = scratchpad_latency(config.scratchpad, width)
     else:
@@ -546,7 +592,8 @@ def _plan_store(
                 resource_name="load_store",
                 start_cycle=cycle,
                 end_cycle=completion_cycle,
-            )
+            ),
+            *_memory_access_reservations(state, memory.name, local_address, width, cycle, completion_cycle),
         ],
         on_complete=on_complete,
         description=f"{instruction.opcode} @ 0x{pc:08x}",
@@ -568,7 +615,7 @@ def _plan_tload(
     shape = _tensor_shape(instruction)
     dtype = _tensor_dtype(instruction)
     num_bytes = _tensor_nbytes(shape, dtype)
-    memory, _local_address = state.resolve_memory(address, config)
+    memory, local_address = state.resolve_memory(address, config)
     if memory is state.scratchpad:
         latency = scratchpad_latency(config.scratchpad, num_bytes)
     else:
@@ -593,7 +640,8 @@ def _plan_tload(
                 resource_name="load_store",
                 start_cycle=cycle,
                 end_cycle=completion_cycle,
-            )
+            ),
+            *_memory_access_reservations(state, memory.name, local_address, num_bytes, cycle, completion_cycle),
         ],
         on_complete=on_complete,
         description=f"tload @ 0x{pc:08x}",
@@ -615,7 +663,7 @@ def _plan_tstore(
     tensor_value = _require_tensor(state, source_tensor, pc, "Source")
     dtype = tensor_value.descriptor.dtype
     raw = _store_tensor_payload(tensor_value.payload, dtype)
-    memory, _local_address = state.resolve_memory(address, config)
+    memory, local_address = state.resolve_memory(address, config)
     if memory is state.scratchpad:
         latency = scratchpad_latency(config.scratchpad, len(raw))
     else:
@@ -632,7 +680,8 @@ def _plan_tstore(
                 resource_name="load_store",
                 start_cycle=cycle,
                 end_cycle=completion_cycle,
-            )
+            ),
+            *_memory_access_reservations(state, memory.name, local_address, len(raw), cycle, completion_cycle),
         ],
         on_complete=on_complete,
         description=f"tstore @ 0x{pc:08x}",
@@ -652,7 +701,27 @@ def _plan_dma_copy(
     source_address = _load_field(instruction, "source_address")
     dest_address = _load_field(instruction, "dest_address")
     num_bytes = _load_field(instruction, "num_bytes")
+    source_memory, source_local_address = state.resolve_memory(source_address, config)
+    dest_memory, dest_local_address = state.resolve_memory(dest_address, config)
     completion_cycle = cycle + dma_latency(config.core.dma, num_bytes)
+    shared_resources = _memory_access_reservations(
+        state,
+        source_memory.name,
+        source_local_address,
+        num_bytes,
+        cycle,
+        completion_cycle,
+    )
+    for reservation in _memory_access_reservations(
+        state,
+        dest_memory.name,
+        dest_local_address,
+        num_bytes,
+        cycle,
+        completion_cycle,
+    ):
+        if reservation not in shared_resources:
+            shared_resources.append(reservation)
 
     def on_complete() -> None:
         payload = state.read_memory(source_address, num_bytes, config)
@@ -665,7 +734,8 @@ def _plan_dma_copy(
                 resource_name="dma",
                 start_cycle=cycle,
                 end_cycle=completion_cycle,
-            )
+            ),
+            *shared_resources,
         ],
         on_complete=on_complete,
         description=f"dma_copy @ 0x{pc:08x}",

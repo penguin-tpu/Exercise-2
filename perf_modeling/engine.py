@@ -149,6 +149,14 @@ class SimulatorEngine:
             self.state.trap(str(exc))
             self.trace.append(self.cycle, "trap", str(exc))
             return
+        shared_reservations = self._shared_resource_reservations(plan.resources)
+        for reservation in shared_reservations:
+            if not self.scoreboard.resource_ready(reservation.resource_name, self.cycle):
+                self._record_stall(
+                    f"stall_{reservation.resource_name}_busy",
+                    f"{reservation.resource_name} busy @ 0x{self.state.pc:08x}",
+                )
+                return
         op_id = self.next_op_id
         self.next_op_id += 1
         for register in instruction.dest_regs():
@@ -157,6 +165,8 @@ class SimulatorEngine:
             self.scoreboard.mark_tensor_busy(tensor)
         for address in instruction.dest_csrs():
             self.scoreboard.mark_csr_busy(address)
+        for reservation in shared_reservations:
+            self.scoreboard.reserve_resource(reservation.resource_name, reservation.end_cycle)
         completion_callback = self._wrap_completion_callback(
             instruction=instruction,
             unit=unit,
@@ -198,6 +208,15 @@ class SimulatorEngine:
         """Increment one stall counter and append a matching trace record."""
         self.stats.increment(counter_name, 1)
         self.trace.append(self.cycle, "stall", message)
+
+    def _shared_resource_reservations(self, reservations: list[object]) -> list[object]:
+        """Return the reservations that model cross-unit shared resources."""
+        return [
+            reservation
+            for reservation in reservations
+            if reservation.resource_name.startswith("mem_")
+            or reservation.resource_name.startswith("sp_bank_")
+        ]
 
     def iter_units(self) -> tuple[object, ...]:
         """Return all modeled units in a stable iteration order."""
