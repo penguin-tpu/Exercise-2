@@ -416,6 +416,41 @@ class TestRunSimCLI:
             + (50).to_bytes(4, byteorder="little", signed=False)
         )
 
+    def test_run_sim_accepts_c_input_directly(self) -> None:
+        """The CLI should compile one C source file transiently when passed direct source input."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        source = repo_root / "tests" / "workload" / "scalar_int_matmul.c"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            dump_path = temp_path / "out" / "results.bin"
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    str(source),
+                    "--scratchpad-dump",
+                    str(dump_path),
+                    "--scratchpad-dump-size",
+                    "16",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            payload = dump_path.read_bytes()
+
+        assert "program=scalar_int_matmul.c" in result.stdout
+        assert payload == (
+            (19).to_bytes(4, byteorder="little", signed=False)
+            + (22).to_bytes(4, byteorder="little", signed=False)
+            + (43).to_bytes(4, byteorder="little", signed=False)
+            + (50).to_bytes(4, byteorder="little", signed=False)
+        )
+
     def test_run_sim_defaults_bare_relative_outputs_under_out_directory(self) -> None:
         """Bare relative output filenames should be materialized under `out/` by default."""
         repo_root = Path(__file__).resolve().parent.parent

@@ -46,7 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
         "program",
         type=Path,
         nargs="?",
-        help="Path to a raw binary, ELF32 image, or assembly source.",
+        help="Path to a raw binary, ELF32 image, or freestanding assembly/C source.",
     )
     parser.add_argument(
         "--base-address",

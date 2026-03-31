@@ -29,18 +29,19 @@ class TestToolchainWrapper:
 
     def build_and_run(
         self,
-        assembly_source: str,
+        source_text: str,
+        source_suffix: str = ".S",
         max_cycles: int = 100,
         config: AcceleratorConfig | None = None,
     ) -> SimulatorEngine:
-        """Assemble one RV32I program through the wrapper and run it in the simulator."""
+        """Compile one RV32I source program through the wrapper and run it in the simulator."""
         repo_root = Path(__file__).resolve().parent.parent
         script = repo_root / "toolchains" / "riscv32" / "assemble_to_elf.py"
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            source = temp_path / "program.S"
+            source = temp_path / f"program{source_suffix}"
             output = temp_path / "program.elf"
-            source.write_text(assembly_source)
+            source.write_text(source_text)
             subprocess.run(
                 [
                     "uv",
@@ -210,6 +211,35 @@ class TestToolchainWrapper:
         )
         assert engine.state.halted
         assert engine.state.exit_code == 11
+
+    def test_assemble_to_elf_compiles_freestanding_c_sources(self) -> None:
+        """The wrapper should also compile freestanding RV32I C sources into runnable ELFs."""
+        engine = self.build_and_run(
+            "\n".join(
+                [
+                    "typedef unsigned int u32;",
+                    "static volatile u32* const SCRATCHPAD = (volatile u32*)0x20000000u;",
+                    "static void halt_with_code(u32 code) {",
+                    '  __asm__ volatile("mv a0, %0\\n ebreak" : : "r"(code) : "a0");',
+                    "  for (;;) {",
+                    "  }",
+                    "}",
+                    "void _start_c(void) {",
+                    "  SCRATCHPAD[0] = 52u;",
+                    "  halt_with_code(SCRATCHPAD[0]);",
+                    "}",
+                    "void _start(void) __attribute__((naked));",
+                    "void _start(void) {",
+                    '  __asm__ volatile("lui sp, 0x80\\naddi sp, sp, -16\\njal zero, _start_c");',
+                    "}",
+                    "",
+                ]
+            ),
+            source_suffix=".c",
+            max_cycles=200,
+        )
+        assert engine.state.halted
+        assert engine.state.exit_code == 52
 
     def test_assemble_to_elf_runs_trap_handler_and_mret_flow(self) -> None:
         """The wrapper should support ELF programs that install trap handlers and return with `mret`."""

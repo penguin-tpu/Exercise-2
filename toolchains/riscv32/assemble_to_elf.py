@@ -1,4 +1,4 @@
-"""Assemble one RV32I assembly file into an executable ELF32 image with GNU binutils."""
+"""Compile one freestanding RV32I source file into an executable ELF32 image."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ from toolchains.riscv32.gnu_toolchain import repo_root_from_file, resolve_toolch
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Assemble RV32I assembly into an ELF32 image.")
-    parser.add_argument("source", type=Path, help="Path to the input RV32I assembly file.")
+    parser = argparse.ArgumentParser(description="Compile a freestanding RV32I source file into an ELF32 image.")
+    parser.add_argument("source", type=Path, help="Path to the input RV32I assembly or C source file.")
     parser.add_argument("--output", type=Path, required=True, help="Path to the output ELF file.")
     parser.add_argument(
         "--base-address",
@@ -35,7 +35,10 @@ def compile_to_elf(source: Path, output: Path, compiler: Path, base_address: int
             str(compiler),
             "-march=rv32i_zicsr",
             "-mabi=ilp32",
+            "-O2",
             "-ffreestanding",
+            "-fno-pic",
+            "-msmall-data-limit=0",
             "-nostdlib",
             "-nostartfiles",
             "-nodefaultlibs",
@@ -53,7 +56,7 @@ def compile_to_elf(source: Path, output: Path, compiler: Path, base_address: int
 
 
 def main() -> None:
-    """Assemble and link one RV32I assembly file into an ELF32 executable."""
+    """Compile and link one freestanding RV32I source file into an ELF32 executable."""
     args = parse_args()
     repo_root = repo_root_from_file(Path(__file__))
     toolchain = resolve_toolchain(repo_root)

@@ -13,8 +13,8 @@ from toolchains.riscv32.assemble_to_elf import compile_to_elf
 from toolchains.riscv32.gnu_toolchain import resolve_toolchain
 
 
-ASSEMBLY_SUFFIXES = frozenset({".s", ".asm"})
-"""File suffixes treated as assembly sources for transient ELF assembly."""
+SOURCE_SUFFIXES = frozenset({".s", ".asm", ".c"})
+"""File suffixes treated as compileable RV32I sources for transient ELF generation."""
 
 
 @dataclass(frozen=True)
@@ -208,8 +208,8 @@ def decode_program_from_path(
     decoder: Decoder,
     repo_root: Path,
 ):
-    """Decode one user-supplied program path, auto-assembling assembly sources first."""
-    if program_path.suffix.lower() in ASSEMBLY_SUFFIXES:
+    """Decode one user-supplied program path, auto-compiling source files first."""
+    if program_path.suffix.lower() in SOURCE_SUFFIXES:
         toolchain = resolve_toolchain(repo_root)
         with tempfile.TemporaryDirectory() as temp_dir:
             elf_path = Path(temp_dir) / f"{program_path.stem}.elf"

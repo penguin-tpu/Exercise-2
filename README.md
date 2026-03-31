@@ -43,14 +43,20 @@ uv run python scripts/run_sim.py
 
 - raw binaries
 - ELF32 images
-- assembly sources such as `.S` or `.s`
+- freestanding source files such as `.S`, `.s`, or `.c`
 
-Assembly inputs are assembled to a transient bare-metal ELF automatically.
+Source inputs are compiled to a transient bare-metal ELF automatically.
 
 Run an existing assembly workload example:
 
 ```bash
 uv run python scripts/run_sim.py tests/workload/scalar_int_matmul.S
+```
+
+Run the matching freestanding C workload example:
+
+```bash
+uv run python scripts/run_sim.py tests/workload/scalar_int_matmul.c
 ```
 
 Run an ELF directly:
@@ -243,8 +249,8 @@ Focused areas covered today include:
 - `perf_modeling/`: simulator package
 - `scripts/run_sim.py`: CLI entrypoint
 - `tests/`: RV32I, timing, workload, and CLI regressions
-- `tests/workload/`: runnable assembly examples
-- `toolchains/riscv32/`: local GNU RISC-V assembly wrapper
+- `tests/workload/`: runnable freestanding assembly and C examples
+- `toolchains/riscv32/`: local GNU RISC-V source-to-ELF wrapper
 - `docs/`: architecture, microarchitecture, and design documents
 - `logs/`: timestamped progress logs
 - `notes/modeling.md`: high-level design plan
