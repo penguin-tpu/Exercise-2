@@ -1,6 +1,5 @@
 .globl _start
 _start:
   addi t0, x0, 3
-  addi t1, x0, 4
-  sll a0, t0, t1
+  slli a0, t0, 4
   ebreak
