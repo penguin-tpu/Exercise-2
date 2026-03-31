@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from scripts.run_sim import emit_report
+from perf_modeling.reporting import emit_report
 
 
 class TestRunSimCLI:
