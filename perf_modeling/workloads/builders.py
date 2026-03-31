@@ -663,6 +663,97 @@ class ProgramBuilder:
             .build(name=f"{problem.name}-vector-reduce-max-staged-smoke")
         )
 
+    def build_dense_relu_smoke_test(
+        self,
+        problem: KernelProblem,
+        input_address: int,
+        weight_address: int,
+        bias_address: int,
+        output_address: int,
+        acc_dtype: str,
+        out_dtype: str,
+    ) -> Program:
+        """Construct a dense-layer matmul-plus-bias-plus-ReLU microbenchmark program."""
+        if len(problem.input_shapes) != 3:
+            raise ValueError("Dense-ReLU smoke tests expect input, weight, and bias tensors.")
+        input_shape = problem.input_shapes[0]
+        weight_shape = problem.input_shapes[1]
+        bias_shape = problem.input_shapes[2]
+        if len(input_shape) != 2 or len(weight_shape) != 2 or len(bias_shape) != 2:
+            raise ValueError("Dense-ReLU smoke tests expect rank-2 tensors.")
+        if input_shape[1] != weight_shape[0]:
+            raise ValueError("Dense-ReLU smoke tests expect compatible matmul dimensions.")
+        if bias_shape != (input_shape[0], weight_shape[1]):
+            raise ValueError("Dense-ReLU smoke tests expect bias shape to match the output tensor.")
+        if problem.output_shape != bias_shape:
+            raise ValueError("Dense-ReLU smoke-test output shape must match the dense output tensor.")
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_tensor_load(dest_tensor=0, address=input_address, shape=input_shape, dtype=out_dtype)
+            .emit_tensor_load(dest_tensor=1, address=weight_address, shape=weight_shape, dtype=out_dtype)
+            .emit_tensor_load(dest_tensor=2, address=bias_address, shape=bias_shape, dtype=out_dtype)
+            .emit_matmul(dest_tensor=3, lhs_tensor=0, rhs_tensor=1, acc_dtype=acc_dtype, out_dtype=out_dtype)
+            .emit_vector_add(dest_tensor=4, lhs_tensor=3, rhs_tensor=2, out_dtype=out_dtype)
+            .emit_vector_relu(dest_tensor=5, source_tensor=4, out_dtype=out_dtype)
+            .emit_tensor_store(source_tensor=5, address=output_address)
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-dense-relu-smoke")
+        )
+
+    def build_staged_dense_relu_smoke_test(
+        self,
+        problem: KernelProblem,
+        input_address: int,
+        weight_address: int,
+        bias_address: int,
+        output_address: int,
+        acc_dtype: str,
+        out_dtype: str,
+        scratchpad_base_address: int,
+    ) -> Program:
+        """Construct a DMA-to-scratchpad dense-layer matmul-plus-bias-plus-ReLU smoke test."""
+        if len(problem.input_shapes) != 3:
+            raise ValueError("Dense-ReLU smoke tests expect input, weight, and bias tensors.")
+        input_shape = problem.input_shapes[0]
+        weight_shape = problem.input_shapes[1]
+        bias_shape = problem.input_shapes[2]
+        if len(input_shape) != 2 or len(weight_shape) != 2 or len(bias_shape) != 2:
+            raise ValueError("Dense-ReLU smoke tests expect rank-2 tensors.")
+        if input_shape[1] != weight_shape[0]:
+            raise ValueError("Dense-ReLU smoke tests expect compatible matmul dimensions.")
+        if bias_shape != (input_shape[0], weight_shape[1]):
+            raise ValueError("Dense-ReLU smoke tests expect bias shape to match the output tensor.")
+        if problem.output_shape != bias_shape:
+            raise ValueError("Dense-ReLU smoke-test output shape must match the dense output tensor.")
+        input_bytes = _tensor_payload_bytes(input_shape, out_dtype)
+        weight_bytes = _tensor_payload_bytes(weight_shape, out_dtype)
+        bias_bytes = _tensor_payload_bytes(bias_shape, out_dtype)
+        output_bytes = _tensor_payload_bytes(problem.output_shape, out_dtype)
+        input_scratch_address = scratchpad_base_address
+        weight_scratch_address = input_scratch_address + input_bytes
+        bias_scratch_address = weight_scratch_address + weight_bytes
+        output_scratch_address = bias_scratch_address + bias_bytes
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_dma_copy(source_address=input_address, dest_address=input_scratch_address, num_bytes=input_bytes)
+            .emit_dma_copy(source_address=weight_address, dest_address=weight_scratch_address, num_bytes=weight_bytes)
+            .emit_dma_copy(source_address=bias_address, dest_address=bias_scratch_address, num_bytes=bias_bytes)
+            .emit("fence")
+            .emit_tensor_load(dest_tensor=0, address=input_scratch_address, shape=input_shape, dtype=out_dtype)
+            .emit_tensor_load(dest_tensor=1, address=weight_scratch_address, shape=weight_shape, dtype=out_dtype)
+            .emit_tensor_load(dest_tensor=2, address=bias_scratch_address, shape=bias_shape, dtype=out_dtype)
+            .emit_matmul(dest_tensor=3, lhs_tensor=0, rhs_tensor=1, acc_dtype=acc_dtype, out_dtype=out_dtype)
+            .emit_vector_add(dest_tensor=4, lhs_tensor=3, rhs_tensor=2, out_dtype=out_dtype)
+            .emit_vector_relu(dest_tensor=5, source_tensor=4, out_dtype=out_dtype)
+            .emit_tensor_store(source_tensor=5, address=output_scratch_address)
+            .emit("fence")
+            .emit_dma_copy(source_address=output_scratch_address, dest_address=output_address, num_bytes=output_bytes)
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-dense-relu-staged-smoke")
+        )
+
     def build_matmul_smoke_test(
         self,
         problem: KernelProblem,

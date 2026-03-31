@@ -387,6 +387,35 @@ class TestWorkloadBuilders:
         assert stats["mxu.issued_ops"] == 1
         assert stats["stall_fence"] >= 1
 
+    def test_dense_relu_smoke_builder_executes_float32_end_to_end(self) -> None:
+        """The dense-ReLU builder should emit a runnable model-like tensor microbenchmark."""
+        problem = KernelProblem(
+            name="dense-relu-float32",
+            input_shapes=((1, 2), (2, 3), (1, 3)),
+            output_shape=(1, 3),
+        )
+        program = ProgramBuilder(base_address=0x1000).build_dense_relu_smoke_test(
+            problem=problem,
+            input_address=0x400,
+            weight_address=0x420,
+            bias_address=0x440,
+            output_address=0x460,
+            acc_dtype="float32",
+            out_dtype="float32",
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x400, pack_float32([1.0, -2.0]))
+        engine.state.dram.write(0x420, pack_float32([2.0, -1.0, 0.5, 1.5, 0.25, -2.0]))
+        engine.state.dram.write(0x440, pack_float32([0.5, 2.0, -1.0]))
+
+        stats = engine.run(max_cycles=300).snapshot()
+
+        assert engine.state.halted
+        assert unpack_float32(engine.state.dram.read(0x460, 12)) == (0.0, 0.5, 3.5)
+        assert stats["mxu.issued_ops"] == 1
+        assert stats["vector.issued_ops"] == 2
+        assert stats["stall_fence"] >= 1
+
     def test_staged_vector_add_smoke_builder_executes_end_to_end(self) -> None:
         """The staged vector-add builder should DMA through scratchpad before compute."""
         problem = KernelProblem(
@@ -767,4 +796,36 @@ class TestWorkloadBuilders:
         assert unpack_float32(engine.state.dram.read(0x380, 16)) == (2.0, 1.75, 5.0, 3.75)
         assert stats["dma.issued_ops"] == 3
         assert stats["mxu.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_staged_dense_relu_smoke_builder_executes_float32_end_to_end(self) -> None:
+        """The staged dense-ReLU builder should DMA through scratchpad before compute."""
+        problem = KernelProblem(
+            name="staged-dense-relu-float32",
+            input_shapes=((1, 2), (2, 3), (1, 3)),
+            output_shape=(1, 3),
+        )
+        config = self.make_config()
+        program = ProgramBuilder(base_address=0x1000).build_staged_dense_relu_smoke_test(
+            problem=problem,
+            input_address=0x400,
+            weight_address=0x420,
+            bias_address=0x440,
+            output_address=0x460,
+            acc_dtype="float32",
+            out_dtype="float32",
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+        engine = SimulatorEngine(config=config, program=program)
+        engine.state.dram.write(0x400, pack_float32([1.0, -2.0]))
+        engine.state.dram.write(0x420, pack_float32([2.0, -1.0, 0.5, 1.5, 0.25, -2.0]))
+        engine.state.dram.write(0x440, pack_float32([0.5, 2.0, -1.0]))
+
+        stats = engine.run(max_cycles=500).snapshot()
+
+        assert engine.state.halted
+        assert unpack_float32(engine.state.dram.read(0x460, 12)) == (0.0, 0.5, 3.5)
+        assert stats["dma.issued_ops"] == 4
+        assert stats["mxu.issued_ops"] == 1
+        assert stats["vector.issued_ops"] == 2
         assert stats["stall_fence"] >= 1
