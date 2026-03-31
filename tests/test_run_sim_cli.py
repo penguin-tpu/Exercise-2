@@ -159,6 +159,88 @@ class TestRunSimCLI:
             + (50).to_bytes(4, byteorder="little", signed=False)
         )
 
+    def test_run_sim_accepts_assembly_input_directly(self) -> None:
+        """The CLI should assemble one source file transiently when passed assembly input."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        source = repo_root / "tests" / "workload" / "scalar_int_matmul.S"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            dump_path = temp_path / "out" / "results.bin"
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    str(source),
+                    "--scratchpad-dump",
+                    str(dump_path),
+                    "--scratchpad-dump-size",
+                    "16",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            payload = dump_path.read_bytes()
+
+        assert "program=scalar_int_matmul.S" in result.stdout
+        assert payload == (
+            (19).to_bytes(4, byteorder="little", signed=False)
+            + (22).to_bytes(4, byteorder="little", signed=False)
+            + (43).to_bytes(4, byteorder="little", signed=False)
+            + (50).to_bytes(4, byteorder="little", signed=False)
+        )
+
+    def test_run_sim_defaults_bare_relative_outputs_under_out_directory(self) -> None:
+        """Bare relative output filenames should be materialized under `out/` by default."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        source = repo_root / "tests" / "workload" / "scalar_int_matmul.S"
+        stats_path = repo_root / "out" / "test-default-stats.json"
+        trace_path = repo_root / "out" / "test-default-trace.json"
+        dump_path = repo_root / "out" / "test-default-results.bin"
+        for path in (stats_path, trace_path, dump_path):
+            if path.exists():
+                path.unlink()
+        try:
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    str(source),
+                    "--stats-json",
+                    stats_path.name,
+                    "--trace-json",
+                    trace_path.name,
+                    "--scratchpad-dump",
+                    dump_path.name,
+                    "--scratchpad-dump-size",
+                    "16",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            assert "program=scalar_int_matmul.S" in result.stdout
+            assert stats_path.exists()
+            assert trace_path.exists()
+            assert dump_path.read_bytes() == (
+                (19).to_bytes(4, byteorder="little", signed=False)
+                + (22).to_bytes(4, byteorder="little", signed=False)
+                + (43).to_bytes(4, byteorder="little", signed=False)
+                + (50).to_bytes(4, byteorder="little", signed=False)
+            )
+        finally:
+            for path in (stats_path, trace_path, dump_path):
+                if path.exists():
+                    path.unlink()
+
     def test_run_sim_prints_filtered_stats_and_trace_tail(self) -> None:
         """The CLI should print filtered stat families and a bounded trace tail on request."""
         repo_root = Path(__file__).resolve().parent.parent

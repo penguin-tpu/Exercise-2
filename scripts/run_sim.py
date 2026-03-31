@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -14,6 +15,12 @@ if str(REPO_ROOT) not in sys.path:
 
 from perf_modeling import AcceleratorConfig, SimulatorEngine
 from perf_modeling.decode import Decoder
+from toolchains.riscv32.assemble_to_elf import compile_to_elf
+from toolchains.riscv32.gnu_toolchain import resolve_toolchain
+
+
+ASSEMBLY_SUFFIXES = frozenset({".s", ".asm"})
+"""File suffixes treated as assembly sources for transient ELF assembly."""
 
 
 def _format_average(total_cycles: int, samples: int) -> str:
@@ -45,10 +52,27 @@ def _matches_report_filter(value: str, report_match: str | None) -> bool:
 
 
 def _prepare_output_path(path_text: str) -> Path:
-    """Create parent directories for one file output target and return the path."""
+    """Create parent directories for one file output target and return the normalized path."""
     path = Path(path_text)
+    if not path.is_absolute() and path.parent == Path("."):
+        path = Path("out") / path
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _decode_program_from_path(program_path: Path, base_address: int, decoder: Decoder):
+    """Decode one user-supplied program path, auto-assembling assembly sources first."""
+    if program_path.suffix.lower() in ASSEMBLY_SUFFIXES:
+        toolchain = resolve_toolchain(REPO_ROOT)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            elf_path = Path(temp_dir) / f"{program_path.stem}.elf"
+            compile_to_elf(program_path, elf_path, toolchain.compiler, base_address)
+            return decoder.decode_bytes(elf_path.read_bytes(), name=program_path.name)
+    return decoder.decode_bytes(
+        program_path.read_bytes(),
+        base_address=base_address,
+        name=program_path.name,
+    )
 
 
 def emit_report(
@@ -299,7 +323,12 @@ def emit_report(
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Execute a bare-metal RV32I binary in the simulator.")
-    parser.add_argument("program", type=Path, nargs="?", help="Path to a raw binary or ELF32 image.")
+    parser.add_argument(
+        "program",
+        type=Path,
+        nargs="?",
+        help="Path to a raw binary, ELF32 image, or assembly source.",
+    )
     parser.add_argument(
         "--base-address",
         type=lambda value: int(value, 0),
@@ -405,8 +434,7 @@ def main() -> None:
         blob = build_default_program()
         program = decoder.decode_bytes(blob, base_address=args.base_address, name="builtin-smoke")
     else:
-        blob = args.program.read_bytes()
-        program = decoder.decode_bytes(blob, base_address=args.base_address, name=args.program.name)
+        program = _decode_program_from_path(args.program, args.base_address, decoder)
     engine = SimulatorEngine(config=AcceleratorConfig(), program=program)
     stats = engine.run(max_cycles=args.max_cycles).snapshot()
     print(f"program={program.name}")

@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+import os
+import re
+import subprocess
 import struct
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
 
 from perf_modeling.config import (
     AcceleratorConfig,
@@ -470,3 +478,304 @@ class TestRV32I:
         assert engine.state.exit_code == 5
         assert program.entry_point == 0x1000
         assert program.segments[0].data[: len(code)] == code
+
+
+def decode_program(words: list[int], base_address: int = 0x1000, as_elf: bool = False) -> Program:
+    """Decode one RV32I machine-code word stream as raw bytes or a minimal ELF image."""
+    blob = pack_words(words)
+    if as_elf:
+        blob = build_minimal_riscv_elf(blob, entry_point=base_address)
+        return Decoder().decode_bytes(blob, name="elf")
+    return Decoder().decode_bytes(blob, base_address=base_address, name="raw")
+
+
+def run_program(words: list[int], max_cycles: int = 1000, as_elf: bool = False) -> SimulatorEngine:
+    """Decode and execute one RV32I machine-code program."""
+    program = decode_program(words, as_elf=as_elf)
+    engine = SimulatorEngine(AcceleratorConfig(), program)
+    engine.run(max_cycles=max_cycles)
+    return engine
+
+
+@dataclass(frozen=True)
+class MemoryExpectation:
+    """One expected post-run scratchpad value."""
+
+    address: int
+    """Scratchpad byte address to inspect."""
+    size: int
+    """Value width in bytes."""
+    value: int
+    """Expected unsigned little-endian value."""
+
+
+@dataclass(frozen=True)
+class Rv32iIsaCase:
+    """One handwritten RV32I ISA-style regression case."""
+
+    source_name: str
+    """Assembly source filename under `tests/isa`."""
+    exit_code: int
+    """Expected architectural exit code from `ebreak`."""
+    max_cycles: int = 128
+    """Cycle budget for the simulator run."""
+    covered_opcodes: tuple[str, ...] = ()
+    """RV32I opcodes intentionally exercised by this source."""
+    scratchpad_expectations: tuple[MemoryExpectation, ...] = ()
+    """Optional scratchpad values expected after execution."""
+
+
+def build_and_run_isa_source(source_path: Path, max_cycles: int) -> SimulatorEngine:
+    """Assemble one handwritten ISA test through the toolchain wrapper and run it."""
+    repo_root = Path(__file__).resolve().parent.parent
+    script = repo_root / "toolchains" / "riscv32" / "assemble_to_elf.py"
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output = Path(temp_dir) / f"{source_path.stem}.elf"
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(repo_root)
+        subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                str(script),
+                str(source_path),
+                "--output",
+                str(output),
+            ],
+            check=True,
+            text=True,
+            cwd=repo_root,
+            env=env,
+        )
+        program = Decoder().decode_bytes(output.read_bytes(), name=source_path.stem)
+        engine = SimulatorEngine(
+            config=AcceleratorConfig(
+                dram=DRAMConfig(
+                    capacity_bytes=1 << 20,
+                    read_latency_cycles=3,
+                    write_latency_cycles=3,
+                    bytes_per_cycle=16,
+                )
+            ),
+            program=program,
+        )
+        engine.run(max_cycles=max_cycles)
+        return engine
+
+
+def read_scratchpad_value(engine: SimulatorEngine, expectation: MemoryExpectation) -> int:
+    """Read one value from modeled scratchpad memory using the expected width."""
+    if expectation.size == 1:
+        return engine.state.scratchpad.read_u8(expectation.address)
+    if expectation.size == 2:
+        return engine.state.scratchpad.read_u16(expectation.address)
+    if expectation.size == 4:
+        return engine.state.scratchpad.read_u32(expectation.address)
+    raise ValueError(f"Unsupported scratchpad width {expectation.size}.")
+
+
+RV32I_BASE_OPCODES = {
+    "lui",
+    "auipc",
+    "jal",
+    "jalr",
+    "beq",
+    "bne",
+    "blt",
+    "bge",
+    "bltu",
+    "bgeu",
+    "lb",
+    "lh",
+    "lw",
+    "lbu",
+    "lhu",
+    "sb",
+    "sh",
+    "sw",
+    "addi",
+    "slti",
+    "sltiu",
+    "xori",
+    "ori",
+    "andi",
+    "slli",
+    "srli",
+    "srai",
+    "add",
+    "sub",
+    "sll",
+    "slt",
+    "sltu",
+    "xor",
+    "srl",
+    "sra",
+    "or",
+    "and",
+    "fence",
+    "ecall",
+    "ebreak",
+}
+
+
+RV32I_ISA_CASES = (
+    Rv32iIsaCase(source_name="addi.S", exit_code=15, covered_opcodes=("addi",)),
+    Rv32iIsaCase(source_name="add.S", exit_code=13, covered_opcodes=("add",)),
+    Rv32iIsaCase(source_name="and.S", exit_code=40, covered_opcodes=("and",)),
+    Rv32iIsaCase(source_name="andi.S", exit_code=12, covered_opcodes=("andi",)),
+    Rv32iIsaCase(source_name="auipc.S", exit_code=7, covered_opcodes=("auipc",)),
+    Rv32iIsaCase(source_name="beq.S", exit_code=11, covered_opcodes=("beq",)),
+    Rv32iIsaCase(source_name="bge.S", exit_code=14, covered_opcodes=("bge",)),
+    Rv32iIsaCase(source_name="bgeu.S", exit_code=16, covered_opcodes=("bgeu",)),
+    Rv32iIsaCase(source_name="blt.S", exit_code=13, covered_opcodes=("blt",)),
+    Rv32iIsaCase(source_name="bltu.S", exit_code=15, covered_opcodes=("bltu",)),
+    Rv32iIsaCase(source_name="bne.S", exit_code=12, covered_opcodes=("bne",)),
+    Rv32iIsaCase(source_name="ebreak.S", exit_code=23, covered_opcodes=("ebreak",)),
+    Rv32iIsaCase(source_name="ecall.S", exit_code=17, covered_opcodes=("ecall",)),
+    Rv32iIsaCase(source_name="fence.S", exit_code=33, covered_opcodes=("fence",)),
+    Rv32iIsaCase(source_name="jal.S", exit_code=15, covered_opcodes=("jal",)),
+    Rv32iIsaCase(source_name="jalr.S", exit_code=18, covered_opcodes=("jalr",)),
+    Rv32iIsaCase(source_name="lb.S", exit_code=1, covered_opcodes=("lb",)),
+    Rv32iIsaCase(source_name="lbu.S", exit_code=255, covered_opcodes=("lbu",)),
+    Rv32iIsaCase(source_name="lh.S", exit_code=4660, covered_opcodes=("lh",)),
+    Rv32iIsaCase(source_name="lhu.S", exit_code=4660, covered_opcodes=("lhu",)),
+    Rv32iIsaCase(source_name="lui.S", exit_code=4096, covered_opcodes=("lui",)),
+    Rv32iIsaCase(
+        source_name="lw.S",
+        exit_code=4916,
+        covered_opcodes=("lw",),
+        scratchpad_expectations=(
+            MemoryExpectation(address=0, size=1, value=0x80),
+            MemoryExpectation(address=2, size=2, value=0x1234),
+            MemoryExpectation(address=4, size=4, value=4916),
+        ),
+    ),
+    Rv32iIsaCase(source_name="or.S", exit_code=51, covered_opcodes=("or",)),
+    Rv32iIsaCase(source_name="ori.S", exit_code=51, covered_opcodes=("ori",)),
+    Rv32iIsaCase(source_name="sll.S", exit_code=48, covered_opcodes=("sll",)),
+    Rv32iIsaCase(source_name="slli.S", exit_code=48, covered_opcodes=("slli",)),
+    Rv32iIsaCase(source_name="slti.S", exit_code=1, covered_opcodes=("slti",)),
+    Rv32iIsaCase(source_name="sltiu.S", exit_code=1, covered_opcodes=("sltiu",)),
+    Rv32iIsaCase(source_name="slt.S", exit_code=1, covered_opcodes=("slt",)),
+    Rv32iIsaCase(source_name="sltu.S", exit_code=1, covered_opcodes=("sltu",)),
+    Rv32iIsaCase(source_name="sra.S", exit_code=8, covered_opcodes=("sra",)),
+    Rv32iIsaCase(source_name="srai.S", exit_code=8, covered_opcodes=("srai",)),
+    Rv32iIsaCase(source_name="srl.S", exit_code=8, covered_opcodes=("srl",)),
+    Rv32iIsaCase(source_name="srli.S", exit_code=8, covered_opcodes=("srli",)),
+    Rv32iIsaCase(source_name="sb.S", exit_code=52, covered_opcodes=("sb",)),
+    Rv32iIsaCase(source_name="sh.S", exit_code=4660, covered_opcodes=("sh",)),
+    Rv32iIsaCase(source_name="sub.S", exit_code=12, covered_opcodes=("sub",)),
+    Rv32iIsaCase(source_name="sw.S", exit_code=852, covered_opcodes=("sw",)),
+    Rv32iIsaCase(source_name="xor.S", exit_code=5, covered_opcodes=("xor",)),
+    Rv32iIsaCase(source_name="xori.S", exit_code=5, covered_opcodes=("xori",)),
+)
+
+
+class TestRv32iEngine:
+    """End-to-end verification coverage for the RV32I engine slice."""
+
+    def test_rv32i_scalar_alu_program_runs_to_ebreak(self) -> None:
+        """Execute a short scalar ALU program and verify architected state."""
+        words = [
+            encode_i_type(5, 0, 0b000, 1, 0x13),
+            encode_i_type(7, 0, 0b000, 2, 0x13),
+            encode_r_type(0x00, 2, 1, 0b000, 3, 0x33),
+            encode_i_type(1, 3, 0b001, 4, 0x13),
+            encode_i_type(30, 4, 0b010, 5, 0x13),
+            encode_r_type(0x00, 0, 4, 0b000, 10, 0x33),
+            0x0010_0073,
+        ]
+        engine = run_program(words, max_cycles=32)
+        assert engine.state.halted
+        assert engine.state.exit_code == 24
+        assert engine.state.scalar_regs.read(3) == 12
+        assert engine.state.scalar_regs.read(4) == 24
+        assert engine.state.scalar_regs.read(5) == 1
+        assert engine.stats.counters["instructions_retired"] == 7
+
+    def test_rv32i_branch_loop_accumulates_sum(self) -> None:
+        """Execute a decrementing loop and verify branch correctness."""
+        words = [
+            encode_i_type(5, 0, 0b000, 1, 0x13),
+            encode_i_type(0, 0, 0b000, 2, 0x13),
+            encode_r_type(0x00, 1, 2, 0b000, 2, 0x33),
+            encode_i_type(-1, 1, 0b000, 1, 0x13),
+            encode_b_type(-8, 0, 1, 0b001, 0x63),
+            encode_r_type(0x00, 0, 2, 0b000, 10, 0x33),
+            0x0010_0073,
+        ]
+        engine = run_program(words, max_cycles=64)
+        assert engine.state.halted
+        assert engine.state.exit_code == 15
+        assert engine.state.scalar_regs.read(2) == 15
+
+    def test_rv32i_dram_store_and_load_round_trip_with_latency(self) -> None:
+        """Store and reload a DRAM word and confirm the modeled long latency."""
+        words = [
+            encode_i_type(128, 0, 0b000, 1, 0x13),
+            encode_u_type(0x1234_5000, 2, 0x37),
+            encode_i_type(0x678, 2, 0b000, 2, 0x13),
+            encode_s_type(0, 2, 1, 0b010, 0x23),
+            encode_i_type(0, 1, 0b010, 3, 0x03),
+            encode_r_type(0x00, 0, 3, 0b000, 10, 0x33),
+            0x0010_0073,
+        ]
+        engine = run_program(words, max_cycles=300)
+        assert engine.state.halted
+        assert engine.state.scalar_regs.read(3) == 0x1234_5678
+        assert engine.state.exit_code == 0x1234_5678
+        assert engine.stats.counters["bytes_written"] == 4
+        assert engine.stats.counters["bytes_read"] == 4
+        assert engine.stats.counters["cycles"] >= 205
+
+    def test_rv32i_elf_loader_and_jalr_control_flow(self) -> None:
+        """Decode a minimal ELF image and execute AUIPC plus JALR control flow."""
+        words = [
+            encode_u_type(0, 1, 0x17),
+            encode_i_type(20, 1, 0b000, 1, 0x13),
+            encode_i_type(0, 1, 0b000, 5, 0x67),
+            encode_i_type(1, 0, 0b000, 10, 0x13),
+            0x0010_0073,
+            encode_r_type(0x00, 0, 5, 0b000, 10, 0x33),
+            0x0010_0073,
+        ]
+        engine = run_program(words, max_cycles=64, as_elf=True)
+        assert engine.state.halted
+        assert engine.program.entry_point == 0x1000
+        assert engine.state.exit_code == 0x100C
+        assert engine.state.scalar_regs.read(5) == 0x100C
+
+
+@pytest.mark.parametrize("case", RV32I_ISA_CASES, ids=[case.source_name for case in RV32I_ISA_CASES])
+def test_handwritten_rv32i_isa_cases(case: Rv32iIsaCase) -> None:
+    """Assemble and execute the handwritten RV32I ISA regression corpus."""
+    source_path = Path(__file__).resolve().parent / "isa" / case.source_name
+    engine = build_and_run_isa_source(source_path, max_cycles=case.max_cycles)
+    assert engine.state.halted
+    assert engine.state.trap_reason is None
+    assert engine.state.exit_code == case.exit_code
+    for expectation in case.scratchpad_expectations:
+        assert read_scratchpad_value(engine, expectation) == expectation.value
+
+
+def test_handwritten_rv32i_isa_cases_cover_complete_base_instruction_set() -> None:
+    """The handwritten ISA corpus should collectively cover the full RV32I base set."""
+    covered = {opcode for case in RV32I_ISA_CASES for opcode in case.covered_opcodes}
+    assert covered == RV32I_BASE_OPCODES
+
+
+def test_handwritten_rv32i_isa_cases_use_one_source_per_opcode() -> None:
+    """Each handwritten ISA case should map one source file to one claimed opcode."""
+    for case in RV32I_ISA_CASES:
+        assert len(case.covered_opcodes) == 1
+        assert Path(case.source_name).stem == case.covered_opcodes[0]
+
+
+def test_handwritten_rv32i_isa_sources_contain_their_claimed_opcode() -> None:
+    """Each handwritten ISA source should explicitly emit the opcode it claims to cover."""
+    isa_dir = Path(__file__).resolve().parent / "isa"
+    for case in RV32I_ISA_CASES:
+        source_text = (isa_dir / case.source_name).read_text()
+        opcode = case.covered_opcodes[0]
+        assert re.search(rf"\b{re.escape(opcode)}\b", source_text)
