@@ -95,6 +95,7 @@ class TestRunSimCLI:
 
         assert "report latency opcode=addi" in result.stdout
         assert "avg_cycles=1.00" in result.stdout
+        assert "report occupancy_summary unit=scalar samples=3 avg_depth=0.67 max_depth=1" in result.stdout
         assert "report occupancy unit=scalar depth=1" in result.stdout
         assert "report units unit=scalar issued_ops=2 busy_cycles=2 max_queue_occupancy=1" in result.stdout
         assert "report isa opcode=addi issued=1 total_cycles=1" in result.stdout
@@ -127,3 +128,18 @@ class TestRunSimCLI:
         assert "report contention key=scratchpad.bank_conflict.sp_bank_0 value=1" in captured.out
         assert "report units unit=scalar issued_ops=4 busy_cycles=4 max_queue_occupancy=2" in captured.out
         assert "report isa opcode=addi issued=4 total_cycles=4" in captured.out
+
+    def test_emit_report_prints_occupancy_summary_from_histogram(self, capsys: object) -> None:
+        """The occupancy report should derive average and peak depth from histogram stats."""
+        stats = {
+            "scalar.queue_occupancy.0": 1,
+            "scalar.queue_occupancy.2": 3,
+            "scalar.max_queue_occupancy": 2,
+        }
+
+        emit_report("occupancy", stats)
+        captured = capsys.readouterr()
+
+        assert "report occupancy_summary unit=scalar samples=4 avg_depth=1.50 max_depth=2" in captured.out
+        assert "report occupancy unit=scalar depth=0 samples=1" in captured.out
+        assert "report occupancy unit=scalar depth=2 samples=3" in captured.out

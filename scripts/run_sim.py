@@ -37,6 +37,20 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
         return
     if report_name == "occupancy":
         occupancy_keys = sorted(key for key in stats if ".queue_occupancy." in key)
+        occupancy_by_unit: dict[str, list[tuple[int, int]]] = {}
+        for key in occupancy_keys:
+            unit_name, _, depth = key.partition(".queue_occupancy.")
+            occupancy_by_unit.setdefault(unit_name, []).append((int(depth), stats[key]))
+        for unit_name in sorted(occupancy_by_unit):
+            samples = sum(count for _, count in occupancy_by_unit[unit_name])
+            weighted_depth = sum(depth * count for depth, count in occupancy_by_unit[unit_name])
+            max_depth = stats.get(
+                f"{unit_name}.max_queue_occupancy",
+                max(depth for depth, _ in occupancy_by_unit[unit_name]),
+            )
+            print(
+                f"report occupancy_summary unit={unit_name} samples={samples} avg_depth={_format_average(weighted_depth, samples)} max_depth={max_depth}"
+            )
         for key in occupancy_keys:
             unit_name, _, depth = key.partition(".queue_occupancy.")
             print(f"report occupancy unit={unit_name} depth={depth} samples={stats[key]}")
