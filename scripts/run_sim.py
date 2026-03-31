@@ -384,6 +384,24 @@ def parse_args() -> argparse.Namespace:
         help="Number of scratchpad bytes to dump. Zero means from offset to scratchpad end.",
     )
     parser.add_argument(
+        "--dram-dump",
+        type=str,
+        default=None,
+        help="Optional path for a raw DRAM dump written after simulation completes.",
+    )
+    parser.add_argument(
+        "--dram-dump-offset",
+        type=lambda value: int(value, 0),
+        default=0,
+        help="Byte offset within DRAM for the dump start.",
+    )
+    parser.add_argument(
+        "--dram-dump-size",
+        type=int,
+        default=0,
+        help="Number of DRAM bytes to dump. Zero means from offset to DRAM end.",
+    )
+    parser.add_argument(
         "--print-stats-prefix",
         action="append",
         default=[],
@@ -511,6 +529,14 @@ def main() -> None:
             size = engine.config.scratchpad.capacity_bytes - offset
         payload = engine.state.scratchpad.read(offset, size)
         _prepare_output_path(args.scratchpad_dump).write_bytes(payload)
+    if args.dram_dump is not None:
+        offset = args.dram_dump_offset
+        if args.dram_dump_size > 0:
+            size = args.dram_dump_size
+        else:
+            size = engine.config.dram.capacity_bytes - offset
+        payload = engine.state.dram.read(offset, size)
+        _prepare_output_path(args.dram_dump).write_bytes(payload)
 
 
 if __name__ == "__main__":

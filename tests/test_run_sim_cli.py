@@ -159,6 +159,53 @@ class TestRunSimCLI:
             + (50).to_bytes(4, byteorder="little", signed=False)
         )
 
+    def test_run_sim_writes_dram_dump_for_store_program(self) -> None:
+        """The CLI should dump DRAM bytes after a program stores through the normal memory path."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "dram_store.S"
+            dump_path = temp_path / "out" / "dram.bin"
+            source.write_text(
+                "\n".join(
+                    [
+                        ".section .text",
+                        ".globl _start",
+                        "_start:",
+                        "  addi t0, x0, 128",
+                        "  lui t1, 0x12345",
+                        "  addi t1, t1, 0x678",
+                        "  sw t1, 0(t0)",
+                        "  ebreak",
+                        "",
+                    ]
+                )
+            )
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    str(source),
+                    "--dram-dump",
+                    str(dump_path),
+                    "--dram-dump-offset",
+                    "128",
+                    "--dram-dump-size",
+                    "4",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            payload = dump_path.read_bytes()
+
+        assert "program=dram_store.S" in result.stdout
+        assert payload == b"\x78\x56\x34\x12"
+
     def test_run_sim_accepts_assembly_input_directly(self) -> None:
         """The CLI should assemble one source file transiently when passed assembly input."""
         repo_root = Path(__file__).resolve().parent.parent
