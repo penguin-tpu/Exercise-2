@@ -211,7 +211,25 @@ class SimulatorEngine:
     def _record_stall(self, counter_name: str, message: str) -> None:
         """Increment one stall counter and append a matching trace record."""
         self.stats.increment(counter_name, 1)
+        self._record_contention_stats(counter_name)
         self._append_trace("stall", message)
+
+    def _record_contention_stats(self, counter_name: str) -> None:
+        """Update aggregate contention statistics derived from stall categories."""
+        if counter_name.startswith("stall_mem_dram_"):
+            self.stats.increment("dram.contention_stalls", 1)
+            self.stats.increment("memory.contention_stalls", 1)
+            return
+        if counter_name.startswith("stall_mem_"):
+            self.stats.increment("memory.contention_stalls", 1)
+            return
+        if counter_name.startswith("stall_sp_bank_"):
+            self.stats.increment("scratchpad.bank_conflict_stalls", 1)
+            self.stats.increment("scratchpad.contention_stalls", 1)
+            return
+        if counter_name.startswith("stall_sp_read_port_") or counter_name.startswith("stall_sp_write_port_"):
+            self.stats.increment("scratchpad.port_conflict_stalls", 1)
+            self.stats.increment("scratchpad.contention_stalls", 1)
 
     def _append_trace(self, kind: str, message: str) -> None:
         """Append one trace record when the current trace policy allows it."""
