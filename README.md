@@ -69,6 +69,7 @@ Useful common options:
 - `--sweep-csv sweep.csv`
 - `--sweep-sort cycles --sweep-desc`
 - `--sweep-limit 3`
+- `--sweep-manifest-json sweep.json`
 - `--output-dir out`
 - `--stats-json stats.json`
 - `--trace-json trace.json`
@@ -109,6 +110,24 @@ uv run python scripts/run_sim.py tests/workload/scalar_int_matmul.S \
   --sweep-limit 2 \
   --sweep-json sweep.json \
   --sweep-csv sweep.csv
+```
+
+You can also package a grouped sweep experiment into one manifest:
+
+```json
+{
+  "program": "tests/workload/scalar_int_matmul.S",
+  "sweep_configs": ["baseline", "tiny_debug"],
+  "sweep_sort": "cycles",
+  "sweep_desc": true,
+  "sweep_limit": 2
+}
+```
+
+```bash
+uv run python scripts/run_sim.py \
+  --sweep-manifest-json sweep.json \
+  --sweep-json sweep-results.json
 ```
 
 ## Reports

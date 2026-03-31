@@ -756,6 +756,61 @@ class TestRunSimCLI:
         assert sweep_payload["limit"] == 1
         assert [entry["config"] for entry in sweep_payload["results"]] == ["tiny_debug"]
 
+    def test_run_sim_loads_grouped_sweep_manifest(self) -> None:
+        """The CLI should accept one grouped sweep manifest with a relative program path."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "manifest_sweep.S"
+            manifest_path = temp_path / "sweep.json"
+            output_path = temp_path / "out" / "manifest-results.json"
+            source.write_text(
+                "\n".join(
+                    [
+                        ".section .text",
+                        ".globl _start",
+                        "_start:",
+                        "  addi a0, x0, 7",
+                        "  ebreak",
+                        "",
+                    ]
+                )
+            )
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "program": source.name,
+                        "sweep_configs": ["baseline", "tiny_debug"],
+                        "sweep_sort": "cycles",
+                        "sweep_desc": True,
+                        "sweep_limit": 1,
+                    }
+                )
+            )
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    "--sweep-manifest-json",
+                    str(manifest_path),
+                    "--sweep-json",
+                    str(output_path),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            sweep_payload = json.loads(output_path.read_text())
+
+        assert "sweep program=manifest_sweep.S configs=2" in result.stdout
+        assert "sweep rank=1 config=tiny_debug sort=cycles sort_value=4" in result.stdout
+        assert sweep_payload["limit"] == 1
+        assert [entry["config"] for entry in sweep_payload["results"]] == ["tiny_debug"]
+
     def test_run_sim_prints_filtered_stats_and_trace_tail(self) -> None:
         """The CLI should print filtered stat families and a bounded trace tail on request."""
         repo_root = Path(__file__).resolve().parent.parent

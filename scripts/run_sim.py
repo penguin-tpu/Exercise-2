@@ -16,6 +16,7 @@ from perf_modeling import AcceleratorConfig, SimulatorEngine
 from perf_modeling.cli_support import (
     decode_program_from_path,
     load_memory_manifest,
+    load_sweep_experiment_manifest,
     parse_image_load_spec,
     prepare_output_path,
 )
@@ -104,6 +105,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=0,
         help="Optional maximum number of ranked sweep results to print and export. Zero means no limit.",
+    )
+    parser.add_argument(
+        "--sweep-manifest-json",
+        type=Path,
+        default=None,
+        help="Optional JSON manifest describing a grouped sweep experiment.",
     )
     parser.add_argument(
         "--dram-load",
@@ -237,15 +244,20 @@ def parse_args() -> tuple[argparse.ArgumentParser, argparse.Namespace]:
     return parser, parser.parse_args()
 
 
-def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+def validate_args(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+    effective_sweep_configs: list[str],
+    effective_sweep_limit: int,
+) -> None:
     """Validate combinations of CLI arguments before starting simulation."""
-    if args.sweep_limit < 0:
+    if effective_sweep_limit < 0:
         parser.error("--sweep-limit must be zero or greater.")
-    if args.sweep_json is not None and not args.sweep_config:
+    if args.sweep_json is not None and not effective_sweep_configs:
         parser.error("--sweep-json requires at least one --sweep-config entry.")
-    if args.sweep_csv is not None and not args.sweep_config:
+    if args.sweep_csv is not None and not effective_sweep_configs:
         parser.error("--sweep-csv requires at least one --sweep-config entry.")
-    if not args.sweep_config:
+    if not effective_sweep_configs:
         return
     if args.stats_json is not None:
         parser.error("--stats-json is not supported together with --sweep-config.")
@@ -281,29 +293,57 @@ def build_default_program() -> bytes:
 def main() -> None:
     """Load and run one RV32I program image."""
     parser, args = parse_args()
-    validate_args(args, parser)
     if args.list_configs:
         for config_name in available_config_names():
             print(f"config name={config_name} description={describe_named_config(config_name)}")
         return
+    sweep_manifest = None
+    if args.sweep_manifest_json is not None:
+        sweep_manifest = load_sweep_experiment_manifest(args.sweep_manifest_json)
+    effective_program_path = args.program
+    if effective_program_path is None and sweep_manifest is not None:
+        effective_program_path = sweep_manifest.program
+    effective_base_address = args.base_address
+    if effective_base_address == 0x1000 and sweep_manifest is not None and sweep_manifest.base_address is not None:
+        effective_base_address = sweep_manifest.base_address
+    effective_max_cycles = args.max_cycles
+    if effective_max_cycles == 100000 and sweep_manifest is not None and sweep_manifest.max_cycles is not None:
+        effective_max_cycles = sweep_manifest.max_cycles
+    effective_sweep_configs = list(args.sweep_config)
+    if not effective_sweep_configs and sweep_manifest is not None:
+        effective_sweep_configs = list(sweep_manifest.sweep_configs)
+    effective_sweep_sort = args.sweep_sort
+    if effective_sweep_sort == "config" and sweep_manifest is not None and sweep_manifest.sweep_sort is not None:
+        effective_sweep_sort = sweep_manifest.sweep_sort
+    effective_sweep_desc = args.sweep_desc
+    if not effective_sweep_desc and sweep_manifest is not None and sweep_manifest.sweep_desc is not None:
+        effective_sweep_desc = sweep_manifest.sweep_desc
+    effective_sweep_limit = args.sweep_limit
+    if effective_sweep_limit == 0 and sweep_manifest is not None and sweep_manifest.sweep_limit is not None:
+        effective_sweep_limit = sweep_manifest.sweep_limit
+    validate_args(args, parser, effective_sweep_configs, effective_sweep_limit)
     decoder = Decoder()
-    if args.program is None:
+    if effective_program_path is None:
         blob = build_default_program()
-        program = decoder.decode_bytes(blob, base_address=args.base_address, name="builtin-smoke")
+        program = decoder.decode_bytes(blob, base_address=effective_base_address, name="builtin-smoke")
     else:
-        program = decode_program_from_path(args.program, args.base_address, decoder, REPO_ROOT)
+        program = decode_program_from_path(effective_program_path, effective_base_address, decoder, REPO_ROOT)
     manifest_dram_loads: list[tuple[int, Path]] = []
     manifest_scratchpad_loads: list[tuple[int, Path]] = []
     if args.memory_loads_json is not None:
         manifest_dram_loads, manifest_scratchpad_loads = load_memory_manifest(args.memory_loads_json)
-    dram_images = [(address, path.read_bytes()) for address, path in manifest_dram_loads]
+    sweep_manifest_dram_loads = list(sweep_manifest.dram_loads) if sweep_manifest is not None else []
+    sweep_manifest_scratchpad_loads = list(sweep_manifest.scratchpad_loads) if sweep_manifest is not None else []
+    dram_images = [(address, path.read_bytes()) for address, path in sweep_manifest_dram_loads]
+    dram_images.extend((address, path.read_bytes()) for address, path in manifest_dram_loads)
     dram_images.extend((address, path.read_bytes()) for address, path in args.dram_load)
-    scratchpad_images = [(offset, path.read_bytes()) for offset, path in manifest_scratchpad_loads]
+    scratchpad_images = [(offset, path.read_bytes()) for offset, path in sweep_manifest_scratchpad_loads]
+    scratchpad_images.extend((offset, path.read_bytes()) for offset, path in manifest_scratchpad_loads)
     scratchpad_images.extend((offset, path.read_bytes()) for offset, path in args.scratchpad_load)
-    if args.sweep_config:
+    if effective_sweep_configs:
         sweep_results: list[dict[str, object]] = []
-        print(f"sweep program={program.name} configs={len(args.sweep_config)}")
-        for config_name in args.sweep_config:
+        print(f"sweep program={program.name} configs={len(effective_sweep_configs)}")
+        for config_name in effective_sweep_configs:
             sweep_engine = SimulatorEngine(config=get_named_config(config_name), program=program)
             sweep_config_snapshot = snapshot_config(sweep_engine.config)
             for address, payload in dram_images:
@@ -324,11 +364,11 @@ def main() -> None:
                     "stats": sweep_stats,
                 }
             )
-        sweep_results = sort_sweep_results(sweep_results, args.sweep_sort, args.sweep_desc)
-        if args.sweep_limit > 0:
-            sweep_results = sweep_results[: args.sweep_limit]
+        sweep_results = sort_sweep_results(sweep_results, effective_sweep_sort, effective_sweep_desc)
+        if effective_sweep_limit > 0:
+            sweep_results = sweep_results[:effective_sweep_limit]
         for index, result in enumerate(sweep_results, start=1):
-            sort_value = extract_sweep_sort_value(result, args.sweep_sort)
+            sort_value = extract_sweep_sort_value(result, effective_sweep_sort)
             summary = result["summary"]
             assert isinstance(summary, dict)
             pipeline = summary["pipeline"]
@@ -336,16 +376,16 @@ def main() -> None:
             assert isinstance(pipeline, dict)
             assert isinstance(busiest_unit, dict)
             print(
-                f"sweep rank={index} config={result['config']} sort={args.sweep_sort} sort_value={sort_value} cycles={result['cycles']} retired={pipeline['retired']} halted={result['halted']} exit_code={result['exit_code']} busiest_unit={busiest_unit['name']}"
+                f"sweep rank={index} config={result['config']} sort={effective_sweep_sort} sort_value={sort_value} cycles={result['cycles']} retired={pipeline['retired']} halted={result['halted']} exit_code={result['exit_code']} busiest_unit={busiest_unit['name']}"
             )
         if args.sweep_json is not None:
             sweep_payload = {
                 "program": program.name,
                 "sort": {
-                    "field": args.sweep_sort,
-                    "descending": args.sweep_desc,
+                    "field": effective_sweep_sort,
+                    "descending": effective_sweep_desc,
                 },
-                "limit": args.sweep_limit if args.sweep_limit > 0 else None,
+                "limit": effective_sweep_limit if effective_sweep_limit > 0 else None,
                 "results": sweep_results,
             }
             serialized = json.dumps(sweep_payload, indent=2, sort_keys=True)
@@ -371,7 +411,7 @@ def main() -> None:
         engine.state.dram.load_image(address, payload)
     for offset, payload in scratchpad_images:
         engine.state.scratchpad.load_image(offset, payload)
-    stats = engine.run(max_cycles=args.max_cycles).snapshot()
+    stats = engine.run(max_cycles=effective_max_cycles).snapshot()
     artifact_outputs: dict[str, str] = {}
     print(f"program={program.name}")
     print(f"halted={engine.state.halted} exit_code={engine.state.exit_code} trap={engine.state.trap_reason}")

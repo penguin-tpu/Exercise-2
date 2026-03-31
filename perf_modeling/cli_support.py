@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from perf_modeling.decode import Decoder
@@ -14,6 +15,30 @@ from toolchains.riscv32.gnu_toolchain import resolve_toolchain
 
 ASSEMBLY_SUFFIXES = frozenset({".s", ".asm"})
 """File suffixes treated as assembly sources for transient ELF assembly."""
+
+
+@dataclass(frozen=True)
+class SweepExperimentManifest:
+    """Resolved contents of one sweep experiment manifest."""
+
+    program: Path | None
+    """Optional program path used for the sweep."""
+    base_address: int | None
+    """Optional raw-binary base address override."""
+    max_cycles: int | None
+    """Optional cycle limit override."""
+    sweep_configs: tuple[str, ...]
+    """Ordered named configs included in the sweep."""
+    sweep_sort: str | None
+    """Optional sweep ranking metric."""
+    sweep_desc: bool | None
+    """Optional reverse-order flag for sweep ranking."""
+    sweep_limit: int | None
+    """Optional top-N limit applied after ranking."""
+    dram_loads: tuple[tuple[int, Path], ...]
+    """Optional DRAM image preloads for each sweep run."""
+    scratchpad_loads: tuple[tuple[int, Path], ...]
+    """Optional scratchpad image preloads for each sweep run."""
 
 
 def parse_image_load_spec(value: str) -> tuple[int, Path]:
@@ -58,6 +83,68 @@ def load_memory_manifest(manifest_path: Path) -> tuple[list[tuple[int, Path]], l
             path = manifest_root / path
         scratchpad_loads.append((offset, path))
     return dram_loads, scratchpad_loads
+
+
+def load_sweep_experiment_manifest(manifest_path: Path) -> SweepExperimentManifest:
+    """Load one sweep experiment manifest with program, configs, ordering, and preloads."""
+    payload = json.loads(manifest_path.read_text())
+    if not isinstance(payload, dict):
+        raise ValueError("Sweep experiment manifest must contain a top-level JSON object.")
+    manifest_root = manifest_path.parent
+    program = payload.get("program")
+    program_path: Path | None = None
+    if program is not None:
+        program_path = Path(program)
+        if not program_path.is_absolute():
+            program_path = manifest_root / program_path
+    sweep_configs_value = payload.get("sweep_configs", [])
+    if not isinstance(sweep_configs_value, list):
+        raise ValueError("sweep_configs must be a JSON array when present.")
+    sweep_configs = tuple(str(config_name) for config_name in sweep_configs_value)
+    base_address = None
+    if "base_address" in payload:
+        base_address = parse_int_like(payload["base_address"], "base_address")
+    max_cycles = None
+    if "max_cycles" in payload:
+        max_cycles = parse_int_like(payload["max_cycles"], "max_cycles")
+    sweep_sort = None
+    if "sweep_sort" in payload:
+        sweep_sort = str(payload["sweep_sort"])
+    sweep_desc = None
+    if "sweep_desc" in payload:
+        sweep_desc = bool(payload["sweep_desc"])
+    sweep_limit = None
+    if "sweep_limit" in payload:
+        sweep_limit = parse_int_like(payload["sweep_limit"], "sweep_limit")
+    dram_loads: list[tuple[int, Path]] = []
+    for entry in payload.get("dram", []):
+        if not isinstance(entry, dict):
+            raise ValueError("Each DRAM sweep manifest entry must be a JSON object.")
+        address = parse_int_like(entry.get("address"), "dram.address")
+        path = Path(entry.get("path"))
+        if not path.is_absolute():
+            path = manifest_root / path
+        dram_loads.append((address, path))
+    scratchpad_loads: list[tuple[int, Path]] = []
+    for entry in payload.get("scratchpad", []):
+        if not isinstance(entry, dict):
+            raise ValueError("Each scratchpad sweep manifest entry must be a JSON object.")
+        offset = parse_int_like(entry.get("offset"), "scratchpad.offset")
+        path = Path(entry.get("path"))
+        if not path.is_absolute():
+            path = manifest_root / path
+        scratchpad_loads.append((offset, path))
+    return SweepExperimentManifest(
+        program=program_path,
+        base_address=base_address,
+        max_cycles=max_cycles,
+        sweep_configs=sweep_configs,
+        sweep_sort=sweep_sort,
+        sweep_desc=sweep_desc,
+        sweep_limit=sweep_limit,
+        dram_loads=tuple(dram_loads),
+        scratchpad_loads=tuple(scratchpad_loads),
+    )
 
 
 def path_is_under_directory(path: Path, directory: Path) -> bool:
