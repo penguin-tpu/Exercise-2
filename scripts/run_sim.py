@@ -68,6 +68,102 @@ def _prepare_output_path(path_text: str, output_dir: str) -> Path:
     return path
 
 
+def build_run_summary(stats: dict[str, int]) -> dict[str, object]:
+    """Build one compact summary view from the flattened stats snapshot."""
+    cycles = stats.get("cycles", 0)
+    issued = stats.get("instructions_issued", 0)
+    retired = stats.get("instructions_retired", 0)
+    total_stalls = sum(value for key, value in stats.items() if key.startswith("stall_"))
+
+    unit_names = sorted(
+        {
+            key.removesuffix(".issued_ops")
+            for key in stats
+            if key.endswith(".issued_ops")
+        }
+        | {
+            key.removesuffix(".busy_cycles")
+            for key in stats
+            if key.endswith(".busy_cycles")
+        }
+    )
+    busiest_unit = "none"
+    busiest_busy_cycles = -1
+    for unit_name in unit_names:
+        busy_cycles = stats.get(f"{unit_name}.busy_cycles", 0)
+        if busy_cycles > busiest_busy_cycles:
+            busiest_unit = unit_name
+            busiest_busy_cycles = busy_cycles
+
+    sample_keys = sorted(key for key in stats if key.startswith("latency.") and key.endswith(".samples"))
+    top_opcode = "none"
+    top_total_cycles = -1
+    for key in sample_keys:
+        opcode = key.removeprefix("latency.").removesuffix(".samples")
+        total_cycles = stats.get(f"latency.{opcode}.total_cycles", 0)
+        if total_cycles > top_total_cycles:
+            top_opcode = opcode
+            top_total_cycles = total_cycles
+
+    memory_keys = sorted(
+        key
+        for key in stats
+        if key.endswith(".bytes_read") or key.endswith(".bytes_written")
+    )
+    top_memory_key = "none"
+    top_memory_bytes = -1
+    for key in memory_keys:
+        if stats[key] > top_memory_bytes:
+            top_memory_key = key
+            top_memory_bytes = stats[key]
+
+    contention_keys = sorted(
+        key
+        for key in stats
+        if key.startswith("memory.contention.resource.")
+        or key.startswith("scratchpad.bank_conflict.")
+        or key.startswith("scratchpad.port_conflict.")
+    )
+    top_contention_key = "none"
+    top_contention_value = -1
+    for key in contention_keys:
+        if stats[key] > top_contention_value:
+            top_contention_key = key
+            top_contention_value = stats[key]
+
+    latency_samples = stats.get(f"latency.{top_opcode}.samples", 0) if top_opcode != "none" else 0
+    latency_total_cycles = stats.get(f"latency.{top_opcode}.total_cycles", 0) if top_opcode != "none" else 0
+    latency_max_cycles = stats.get(f"latency.{top_opcode}.max_cycles", 0) if top_opcode != "none" else 0
+
+    return {
+        "pipeline": {
+            "cycles": cycles,
+            "issued": issued,
+            "retired": retired,
+            "total_stalls": total_stalls,
+        },
+        "busiest_unit": {
+            "name": busiest_unit,
+            "busy_cycles": max(busiest_busy_cycles, 0),
+            "busy_pct": _format_percentage(max(busiest_busy_cycles, 0), cycles),
+            "issued_ops": stats.get(f"{busiest_unit}.issued_ops", 0) if busiest_unit != "none" else 0,
+        },
+        "latency_hotspot": {
+            "opcode": top_opcode,
+            "avg_cycles": _format_average(latency_total_cycles, latency_samples),
+            "max_cycles": latency_max_cycles,
+        },
+        "memory_hotspot": {
+            "key": top_memory_key,
+            "total_bytes": max(top_memory_bytes, 0),
+        },
+        "contention_hotspot": {
+            "key": top_contention_key,
+            "value": max(top_contention_value, 0),
+        },
+    }
+
+
 def _decode_program_from_path(program_path: Path, base_address: int, decoder: Decoder):
     """Decode one user-supplied program path, auto-assembling assembly sources first."""
     if program_path.suffix.lower() in ASSEMBLY_SUFFIXES:
@@ -91,87 +187,26 @@ def emit_report(
 ) -> None:
     """Print one curated report from the flattened stats snapshot."""
     if report_name == "summary":
-        cycles = stats.get("cycles", 0)
-        issued = stats.get("instructions_issued", 0)
-        retired = stats.get("instructions_retired", 0)
-        total_stalls = sum(value for key, value in stats.items() if key.startswith("stall_"))
+        summary = build_run_summary(stats)
+        pipeline = summary["pipeline"]
+        busiest_unit = summary["busiest_unit"]
+        latency_hotspot = summary["latency_hotspot"]
+        memory_hotspot = summary["memory_hotspot"]
+        contention_hotspot = summary["contention_hotspot"]
         print(
-            f"report summary pipeline cycles={cycles} issued={issued} retired={retired} total_stalls={total_stalls}"
+            f"report summary pipeline cycles={pipeline['cycles']} issued={pipeline['issued']} retired={pipeline['retired']} total_stalls={pipeline['total_stalls']}"
         )
-
-        unit_names = sorted(
-            {
-                key.removesuffix(".issued_ops")
-                for key in stats
-                if key.endswith(".issued_ops")
-            }
-            | {
-                key.removesuffix(".busy_cycles")
-                for key in stats
-                if key.endswith(".busy_cycles")
-            }
-        )
-        busiest_unit = "none"
-        busiest_busy_cycles = -1
-        for unit_name in unit_names:
-            busy_cycles = stats.get(f"{unit_name}.busy_cycles", 0)
-            if busy_cycles > busiest_busy_cycles:
-                busiest_unit = unit_name
-                busiest_busy_cycles = busy_cycles
-        busiest_pct = _format_percentage(max(busiest_busy_cycles, 0), cycles)
         print(
-            f"report summary unit={busiest_unit} busy_cycles={max(busiest_busy_cycles, 0)} busy_pct={busiest_pct} issued_ops={stats.get(f'{busiest_unit}.issued_ops', 0) if busiest_unit != 'none' else 0}"
+            f"report summary unit={busiest_unit['name']} busy_cycles={busiest_unit['busy_cycles']} busy_pct={busiest_unit['busy_pct']} issued_ops={busiest_unit['issued_ops']}"
         )
-
-        sample_keys = sorted(key for key in stats if key.startswith("latency.") and key.endswith(".samples"))
-        top_opcode = "none"
-        top_total_cycles = -1
-        for key in sample_keys:
-            opcode = key.removeprefix("latency.").removesuffix(".samples")
-            total_cycles = stats.get(f"latency.{opcode}.total_cycles", 0)
-            if total_cycles > top_total_cycles:
-                top_opcode = opcode
-                top_total_cycles = total_cycles
-        if top_opcode == "none":
-            print("report summary latency opcode=none avg_cycles=0.00 max_cycles=0")
-        else:
-            samples = stats.get(f"latency.{top_opcode}.samples", 0)
-            total_cycles = stats.get(f"latency.{top_opcode}.total_cycles", 0)
-            max_cycles = stats.get(f"latency.{top_opcode}.max_cycles", 0)
-            print(
-                f"report summary latency opcode={top_opcode} avg_cycles={_format_average(total_cycles, samples)} max_cycles={max_cycles}"
-            )
-
-        memory_keys = sorted(
-            key
-            for key in stats
-            if key.endswith(".bytes_read") or key.endswith(".bytes_written")
-        )
-        top_memory_key = "none"
-        top_memory_bytes = -1
-        for key in memory_keys:
-            if stats[key] > top_memory_bytes:
-                top_memory_key = key
-                top_memory_bytes = stats[key]
         print(
-            f"report summary memory key={top_memory_key} total_bytes={max(top_memory_bytes, 0)}"
+            f"report summary latency opcode={latency_hotspot['opcode']} avg_cycles={latency_hotspot['avg_cycles']} max_cycles={latency_hotspot['max_cycles']}"
         )
-
-        contention_keys = sorted(
-            key
-            for key in stats
-            if key.startswith("memory.contention.resource.")
-            or key.startswith("scratchpad.bank_conflict.")
-            or key.startswith("scratchpad.port_conflict.")
-        )
-        top_contention_key = "none"
-        top_contention_value = -1
-        for key in contention_keys:
-            if stats[key] > top_contention_value:
-                top_contention_key = key
-                top_contention_value = stats[key]
         print(
-            f"report summary contention key={top_contention_key} value={max(top_contention_value, 0)}"
+            f"report summary memory key={memory_hotspot['key']} total_bytes={memory_hotspot['total_bytes']}"
+        )
+        print(
+            f"report summary contention key={contention_hotspot['key']} value={contention_hotspot['value']}"
         )
         return
     if report_name == "latency":
@@ -584,6 +619,7 @@ def main() -> None:
             "exit_code": engine.state.exit_code,
             "trap": engine.state.trap_reason,
             "cycles": stats.get("cycles", 0),
+            "summary": build_run_summary(stats),
             "artifacts": artifact_outputs,
             "manifest": manifest_destination,
         }

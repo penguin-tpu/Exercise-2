@@ -373,6 +373,10 @@ class TestRunSimCLI:
         assert manifest_payload["halted"] is True
         assert manifest_payload["exit_code"] == 50
         assert manifest_payload["manifest"] == str(manifest_path.resolve())
+        assert manifest_payload["summary"]["pipeline"]["cycles"] == manifest_payload["cycles"]
+        assert manifest_payload["summary"]["pipeline"]["retired"] > 0
+        assert manifest_payload["summary"]["busiest_unit"]["name"] != ""
+        assert manifest_payload["summary"]["latency_hotspot"]["opcode"] != ""
         assert manifest_payload["artifacts"]["stats_json"] == str((output_dir / "stats.json").resolve())
         assert manifest_payload["artifacts"]["trace_json"] == str((output_dir / "trace.json").resolve())
         assert manifest_payload["artifacts"]["scratchpad_dump"] == str((output_dir / "results.bin").resolve())
