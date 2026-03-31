@@ -952,6 +952,25 @@ def _plan_vmul(
     )
 
 
+def _plan_vmax(
+    instruction: Instruction,
+    cycle: int,
+    state: "ArchState",
+    config: "AcceleratorConfig",
+    _scoreboard: "Scoreboard",
+    backend: "TensorBackend | None",
+) -> ExecutionPlan:
+    return _plan_vector_binary_elementwise(
+        instruction,
+        cycle,
+        state,
+        config,
+        backend,
+        backend_op_name="max",
+        opcode_label="vmax",
+    )
+
+
 def _plan_vrelu(
     instruction: Instruction,
     cycle: int,
@@ -1243,6 +1262,7 @@ def build_rv32i_semantics_registry() -> SemanticsRegistry:
     registry.register("tstore", _plan_tstore)
     registry.register("vadd", _plan_vadd)
     registry.register("vmul", _plan_vmul)
+    registry.register("vmax", _plan_vmax)
     registry.register("vrelu", _plan_vrelu)
     registry.register("vreduce_sum", _plan_vreduce_sum)
     registry.register("matmul", _plan_matmul)
