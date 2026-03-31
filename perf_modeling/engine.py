@@ -216,6 +216,8 @@ class SimulatorEngine:
             for reservation in reservations
             if reservation.resource_name.startswith("mem_")
             or reservation.resource_name.startswith("sp_bank_")
+            or reservation.resource_name.startswith("sp_read_port_")
+            or reservation.resource_name.startswith("sp_write_port_")
         ]
 
     def iter_units(self) -> tuple[object, ...]:

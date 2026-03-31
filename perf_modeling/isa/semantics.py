@@ -265,6 +265,35 @@ def _scratchpad_bank_reservations(
     ]
 
 
+def _scratchpad_port_reservation(
+    scoreboard: "Scoreboard",
+    config: "AcceleratorConfig",
+    cycle: int,
+    completion_cycle: int,
+    is_write: bool,
+) -> ResourceReservation:
+    """Reserve one scratchpad read or write port across the access lifetime."""
+    if is_write:
+        port_prefix = "sp_write_port"
+        port_count = config.scratchpad.write_ports
+    else:
+        port_prefix = "sp_read_port"
+        port_count = config.scratchpad.read_ports
+    for port_index in range(max(1, port_count)):
+        resource_name = f"{port_prefix}_{port_index}"
+        if scoreboard.resource_ready(resource_name, cycle):
+            return ResourceReservation(
+                resource_name=resource_name,
+                start_cycle=cycle,
+                end_cycle=completion_cycle,
+            )
+    return ResourceReservation(
+        resource_name=f"{port_prefix}_0",
+        start_cycle=cycle,
+        end_cycle=completion_cycle,
+    )
+
+
 def _scratchpad_latency(
     state: "ArchState",
     config: "AcceleratorConfig",
@@ -278,15 +307,21 @@ def _scratchpad_latency(
 
 def _memory_access_reservations(
     state: "ArchState",
+    config: "AcceleratorConfig",
+    scoreboard: "Scoreboard",
     memory_name: str,
     local_address: int,
     size_bytes: int,
     cycle: int,
     completion_cycle: int,
+    is_write: bool,
 ) -> list[ResourceReservation]:
     """Create shared reservations for one memory-layer access."""
     if memory_name == state.scratchpad.name:
-        return _scratchpad_bank_reservations(state, local_address, size_bytes, cycle, completion_cycle)
+        return [
+            *_scratchpad_bank_reservations(state, local_address, size_bytes, cycle, completion_cycle),
+            _scratchpad_port_reservation(scoreboard, config, cycle, completion_cycle, is_write),
+        ]
     return [_memory_resource_reservation(memory_name, cycle, completion_cycle)]
 
 
@@ -523,7 +558,7 @@ def _plan_load(
     cycle: int,
     state: "ArchState",
     config: "AcceleratorConfig",
-    _scoreboard: "Scoreboard",
+    scoreboard: "Scoreboard",
     _backend: "TensorBackend | None",
 ) -> ExecutionPlan:
     pc = _load_field(instruction, "pc")
@@ -557,7 +592,17 @@ def _plan_load(
                 start_cycle=cycle,
                 end_cycle=completion_cycle,
             ),
-            *_memory_access_reservations(state, memory.name, local_address, width, cycle, completion_cycle),
+            *_memory_access_reservations(
+                state,
+                config,
+                scoreboard,
+                memory.name,
+                local_address,
+                width,
+                cycle,
+                completion_cycle,
+                False,
+            ),
         ],
         on_complete=on_complete,
         description=f"{instruction.opcode} @ 0x{pc:08x}",
@@ -570,7 +615,7 @@ def _plan_store(
     cycle: int,
     state: "ArchState",
     config: "AcceleratorConfig",
-    _scoreboard: "Scoreboard",
+    scoreboard: "Scoreboard",
     _backend: "TensorBackend | None",
 ) -> ExecutionPlan:
     pc = _load_field(instruction, "pc")
@@ -604,7 +649,17 @@ def _plan_store(
                 start_cycle=cycle,
                 end_cycle=completion_cycle,
             ),
-            *_memory_access_reservations(state, memory.name, local_address, width, cycle, completion_cycle),
+            *_memory_access_reservations(
+                state,
+                config,
+                scoreboard,
+                memory.name,
+                local_address,
+                width,
+                cycle,
+                completion_cycle,
+                True,
+            ),
         ],
         on_complete=on_complete,
         description=f"{instruction.opcode} @ 0x{pc:08x}",
@@ -617,7 +672,7 @@ def _plan_tload(
     cycle: int,
     state: "ArchState",
     config: "AcceleratorConfig",
-    _scoreboard: "Scoreboard",
+    scoreboard: "Scoreboard",
     backend: "TensorBackend | None",
 ) -> ExecutionPlan:
     pc = _load_field(instruction, "pc")
@@ -652,7 +707,17 @@ def _plan_tload(
                 start_cycle=cycle,
                 end_cycle=completion_cycle,
             ),
-            *_memory_access_reservations(state, memory.name, local_address, num_bytes, cycle, completion_cycle),
+            *_memory_access_reservations(
+                state,
+                config,
+                scoreboard,
+                memory.name,
+                local_address,
+                num_bytes,
+                cycle,
+                completion_cycle,
+                False,
+            ),
         ],
         on_complete=on_complete,
         description=f"tload @ 0x{pc:08x}",
@@ -665,7 +730,7 @@ def _plan_tstore(
     cycle: int,
     state: "ArchState",
     config: "AcceleratorConfig",
-    _scoreboard: "Scoreboard",
+    scoreboard: "Scoreboard",
     _backend: "TensorBackend | None",
 ) -> ExecutionPlan:
     pc = _load_field(instruction, "pc")
@@ -692,7 +757,17 @@ def _plan_tstore(
                 start_cycle=cycle,
                 end_cycle=completion_cycle,
             ),
-            *_memory_access_reservations(state, memory.name, local_address, len(raw), cycle, completion_cycle),
+            *_memory_access_reservations(
+                state,
+                config,
+                scoreboard,
+                memory.name,
+                local_address,
+                len(raw),
+                cycle,
+                completion_cycle,
+                True,
+            ),
         ],
         on_complete=on_complete,
         description=f"tstore @ 0x{pc:08x}",
@@ -705,7 +780,7 @@ def _plan_dma_copy(
     cycle: int,
     state: "ArchState",
     config: "AcceleratorConfig",
-    _scoreboard: "Scoreboard",
+    scoreboard: "Scoreboard",
     _backend: "TensorBackend | None",
 ) -> ExecutionPlan:
     pc = _load_field(instruction, "pc")
@@ -717,19 +792,25 @@ def _plan_dma_copy(
     completion_cycle = cycle + dma_latency(config.core.dma, num_bytes)
     shared_resources = _memory_access_reservations(
         state,
+        config,
+        scoreboard,
         source_memory.name,
         source_local_address,
         num_bytes,
         cycle,
         completion_cycle,
+        False,
     )
     for reservation in _memory_access_reservations(
         state,
+        config,
+        scoreboard,
         dest_memory.name,
         dest_local_address,
         num_bytes,
         cycle,
         completion_cycle,
+        True,
     ):
         if reservation not in shared_resources:
             shared_resources.append(reservation)
