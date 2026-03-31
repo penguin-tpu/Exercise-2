@@ -151,7 +151,11 @@ class SimulatorEngine:
             return
         shared_reservations = self._shared_resource_reservations(plan.resources)
         for reservation in shared_reservations:
-            if not self.scoreboard.resource_ready(reservation.resource_name, self.cycle):
+            if not self.scoreboard.resource_ready(
+                reservation.resource_name,
+                reservation.start_cycle,
+                reservation.end_cycle,
+            ):
                 self._record_stall(
                     f"stall_{reservation.resource_name}_busy",
                     f"{reservation.resource_name} busy @ 0x{self.state.pc:08x}",
@@ -166,7 +170,11 @@ class SimulatorEngine:
         for address in instruction.dest_csrs():
             self.scoreboard.mark_csr_busy(address)
         for reservation in shared_reservations:
-            self.scoreboard.reserve_resource(reservation.resource_name, reservation.end_cycle)
+            self.scoreboard.reserve_resource(
+                reservation.resource_name,
+                reservation.start_cycle,
+                reservation.end_cycle,
+            )
         completion_callback = self._wrap_completion_callback(
             instruction=instruction,
             unit=unit,

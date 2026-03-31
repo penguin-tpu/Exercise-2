@@ -16,3 +16,7 @@ class ResourceReservation:
     def overlaps(self, cycle: int) -> bool:
         """Return whether the reservation covers the specified cycle."""
         return self.start_cycle <= cycle < self.end_cycle
+
+    def overlaps_interval(self, start_cycle: int, end_cycle: int) -> bool:
+        """Return whether this reservation overlaps another half-open interval."""
+        return self.start_cycle < end_cycle and start_cycle < self.end_cycle

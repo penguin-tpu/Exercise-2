@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from perf_modeling.timing.resources import ResourceReservation
+
 
 @dataclass
 class Scoreboard:
@@ -12,7 +14,7 @@ class Scoreboard:
     busy_scalars: set[int] = field(default_factory=set)
     busy_csrs: set[int] = field(default_factory=set)
     busy_tensors: set[int] = field(default_factory=set)
-    busy_resources: dict[str, int] = field(default_factory=dict)
+    busy_resources: dict[str, list[ResourceReservation]] = field(default_factory=dict)
 
     def clear(self) -> None:
         """Clear all tracked hazards."""
@@ -59,10 +61,31 @@ class Scoreboard:
         """Return whether the tensor register may be accessed this cycle."""
         return index not in self.busy_tensors
 
-    def reserve_resource(self, name: str, until_cycle: int) -> None:
-        """Reserve a named shared resource until the given cycle."""
-        self.busy_resources[name] = until_cycle
+    def reserve_resource(self, name: str, start_cycle: int, end_cycle: int) -> None:
+        """Reserve a named shared resource over one cycle interval."""
+        reservations = self.busy_resources.setdefault(name, [])
+        reservations.append(
+            ResourceReservation(
+                resource_name=name,
+                start_cycle=start_cycle,
+                end_cycle=end_cycle,
+            )
+        )
+        reservations.sort(key=lambda reservation: (reservation.start_cycle, reservation.end_cycle))
 
-    def resource_ready(self, name: str, cycle: int) -> bool:
-        """Return whether a named resource is available at the cycle."""
-        return self.busy_resources.get(name, -1) <= cycle
+    def resource_ready(self, name: str, start_cycle: int, end_cycle: int) -> bool:
+        """Return whether a named resource is available over one cycle interval."""
+        reservations = self.busy_resources.get(name, [])
+        retained_reservations: list[ResourceReservation] = []
+        is_ready = True
+        for reservation in reservations:
+            if reservation.end_cycle <= start_cycle:
+                continue
+            retained_reservations.append(reservation)
+            if reservation.overlaps_interval(start_cycle, end_cycle):
+                is_ready = False
+        if retained_reservations:
+            self.busy_resources[name] = retained_reservations
+        else:
+            self.busy_resources.pop(name, None)
+        return is_ready

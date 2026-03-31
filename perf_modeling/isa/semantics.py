@@ -281,7 +281,7 @@ def _scratchpad_port_reservation(
         port_count = config.scratchpad.read_ports
     for port_index in range(max(1, port_count)):
         resource_name = f"{port_prefix}_{port_index}"
-        if scoreboard.resource_ready(resource_name, cycle):
+        if scoreboard.resource_ready(resource_name, cycle, completion_cycle):
             return ResourceReservation(
                 resource_name=resource_name,
                 start_cycle=cycle,
@@ -790,6 +790,7 @@ def _plan_dma_copy(
     source_memory, source_local_address = state.resolve_memory(source_address, config)
     dest_memory, dest_local_address = state.resolve_memory(dest_address, config)
     completion_cycle = cycle + dma_latency(config.core.dma, num_bytes)
+    transfer_start_cycle = cycle + config.core.dma.setup_cycles
     shared_resources = _memory_access_reservations(
         state,
         config,
@@ -797,7 +798,7 @@ def _plan_dma_copy(
         source_memory.name,
         source_local_address,
         num_bytes,
-        cycle,
+        transfer_start_cycle,
         completion_cycle,
         False,
     )
@@ -808,7 +809,7 @@ def _plan_dma_copy(
         dest_memory.name,
         dest_local_address,
         num_bytes,
-        cycle,
+        transfer_start_cycle,
         completion_cycle,
         True,
     ):
