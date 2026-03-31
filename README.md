@@ -172,6 +172,14 @@ The same grouped manifest style can drive a single run too:
 uv run python scripts/run_sim.py --experiment-json experiment.json
 ```
 
+Grouped single-run manifests can also own stdout report controls such as:
+
+- `reports`
+- `report_limit`
+- `report_match`
+- `print_stats_prefix`
+- `print_trace_limit`
+
 ## Reports
 
 The CLI can print curated report views from the flat stats surface:

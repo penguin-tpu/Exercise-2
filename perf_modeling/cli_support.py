@@ -29,6 +29,16 @@ class ExperimentManifest:
     """Optional cycle limit override."""
     config: str | None
     """Optional single-run named config."""
+    report_names: tuple[str, ...]
+    """Ordered single-run reports selected by the manifest."""
+    report_limit: int | None
+    """Optional single-run report detail limit."""
+    report_match: str | None
+    """Optional single-run report substring filter."""
+    print_stats_prefixes: tuple[str, ...]
+    """Optional single-run stat-prefix filters printed to stdout."""
+    print_trace_limit: int | None
+    """Optional single-run retained-trace tail length printed to stdout."""
     sweep_configs: tuple[str, ...]
     """Ordered named configs included in the sweep."""
     sweep_sort: str | None
@@ -136,6 +146,23 @@ def load_experiment_manifest(manifest_path: Path) -> ExperimentManifest:
     config = None
     if "config" in payload:
         config = str(payload["config"])
+    report_names_value = payload.get("reports", [])
+    if not isinstance(report_names_value, list):
+        raise ValueError("reports must be a JSON array when present.")
+    report_names = tuple(str(report_name) for report_name in report_names_value)
+    report_limit = None
+    if "report_limit" in payload:
+        report_limit = parse_int_like(payload["report_limit"], "report_limit")
+    report_match = None
+    if "report_match" in payload:
+        report_match = str(payload["report_match"])
+    print_stats_prefixes_value = payload.get("print_stats_prefix", [])
+    if not isinstance(print_stats_prefixes_value, list):
+        raise ValueError("print_stats_prefix must be a JSON array when present.")
+    print_stats_prefixes = tuple(str(prefix) for prefix in print_stats_prefixes_value)
+    print_trace_limit = None
+    if "print_trace_limit" in payload:
+        print_trace_limit = parse_int_like(payload["print_trace_limit"], "print_trace_limit")
     base_address = None
     if "base_address" in payload:
         base_address = parse_int_like(payload["base_address"], "base_address")
@@ -183,6 +210,11 @@ def load_experiment_manifest(manifest_path: Path) -> ExperimentManifest:
         base_address=base_address,
         max_cycles=max_cycles,
         config=config,
+        report_names=report_names,
+        report_limit=report_limit,
+        report_match=report_match,
+        print_stats_prefixes=print_stats_prefixes,
+        print_trace_limit=print_trace_limit,
         sweep_configs=sweep_configs,
         sweep_sort=sweep_sort,
         sweep_desc=sweep_desc,

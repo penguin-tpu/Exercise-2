@@ -270,6 +270,9 @@ def validate_args(
     parser: argparse.ArgumentParser,
     effective_sweep_configs: list[str],
     effective_sweep_limit: int,
+    effective_print_stats_prefixes: list[str],
+    effective_print_trace_limit: int,
+    effective_report_names: list[str],
     effective_stats_json: str | None,
     effective_stats_csv: str | None,
     effective_trace_json: str | None,
@@ -308,11 +311,11 @@ def validate_args(
         parser.error("--scratchpad-dump is not supported together with --sweep-config.")
     if effective_dram_dump is not None:
         parser.error("--dram-dump is not supported together with --sweep-config.")
-    if args.print_stats_prefix:
+    if effective_print_stats_prefixes:
         parser.error("--print-stats-prefix is not supported together with --sweep-config.")
-    if args.print_trace_limit > 0:
+    if effective_print_trace_limit > 0:
         parser.error("--print-trace-limit is not supported together with --sweep-config.")
-    if args.report:
+    if effective_report_names:
         parser.error("--report is not supported together with --sweep-config.")
 
 
@@ -349,6 +352,21 @@ def main() -> None:
     effective_max_cycles = args.max_cycles
     if effective_max_cycles == 100000 and experiment_manifest is not None and experiment_manifest.max_cycles is not None:
         effective_max_cycles = experiment_manifest.max_cycles
+    effective_print_stats_prefixes = list(args.print_stats_prefix)
+    if not effective_print_stats_prefixes and experiment_manifest is not None:
+        effective_print_stats_prefixes = list(experiment_manifest.print_stats_prefixes)
+    effective_print_trace_limit = args.print_trace_limit
+    if effective_print_trace_limit == 0 and experiment_manifest is not None and experiment_manifest.print_trace_limit is not None:
+        effective_print_trace_limit = experiment_manifest.print_trace_limit
+    effective_report_names = list(args.report)
+    if not effective_report_names and experiment_manifest is not None:
+        effective_report_names = list(experiment_manifest.report_names)
+    effective_report_limit = args.report_limit
+    if effective_report_limit == 0 and experiment_manifest is not None and experiment_manifest.report_limit is not None:
+        effective_report_limit = experiment_manifest.report_limit
+    effective_report_match = args.report_match
+    if effective_report_match is None and experiment_manifest is not None and experiment_manifest.report_match is not None:
+        effective_report_match = experiment_manifest.report_match
     effective_sweep_configs = list(args.sweep_config)
     if not effective_sweep_configs and experiment_manifest is not None:
         effective_sweep_configs = list(experiment_manifest.sweep_configs)
@@ -435,6 +453,9 @@ def main() -> None:
         parser,
         effective_sweep_configs,
         effective_sweep_limit,
+        effective_print_stats_prefixes,
+        effective_print_trace_limit,
+        effective_report_names,
         effective_stats_json,
         effective_stats_csv,
         effective_trace_json,
@@ -550,27 +571,27 @@ def main() -> None:
     print(
         f"cycles={stats.get('cycles', 0)} issued={stats.get('instructions_issued', 0)} retired={stats.get('instructions_retired', 0)}"
     )
-    if args.print_stats_prefix:
+    if effective_print_stats_prefixes:
         for key in sorted(stats):
-            if any(key.startswith(prefix) for prefix in args.print_stats_prefix):
+            if any(key.startswith(prefix) for prefix in effective_print_stats_prefixes):
                 print(f"stat[{key}]={stats[key]}")
-    if args.print_trace_limit > 0:
-        for record in engine.trace.records[-args.print_trace_limit :]:
+    if effective_print_trace_limit > 0:
+        for record in engine.trace.records[-effective_print_trace_limit :]:
             print(f"trace cycle={record.cycle} kind={record.kind} message={record.message}")
-    for report_name in args.report:
+    for report_name in effective_report_names:
         if report_name == "config":
             emit_config_report(
                 effective_config_name,
                 config_snapshot,
-                report_limit=args.report_limit if args.report_limit > 0 else None,
-                report_match=args.report_match,
+                report_limit=effective_report_limit if effective_report_limit > 0 else None,
+                report_match=effective_report_match,
             )
             continue
         emit_report(
             report_name,
             stats,
-            report_limit=args.report_limit if args.report_limit > 0 else None,
-            report_match=args.report_match,
+            report_limit=effective_report_limit if effective_report_limit > 0 else None,
+            report_match=effective_report_match,
         )
     if effective_stats_json is not None:
         stats_payload = {

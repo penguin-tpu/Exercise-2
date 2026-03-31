@@ -1107,6 +1107,60 @@ class TestRunSimCLI:
         assert "report config_summary name=tiny_debug fields=" in result.stdout
         assert "report config_summary name=baseline fields=" not in result.stdout
 
+    def test_run_sim_loads_report_controls_from_experiment_manifest(self) -> None:
+        """A grouped single-run manifest should be able to own report and print controls."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "manifest_reports.S"
+            manifest_path = temp_path / "experiment.json"
+            source.write_text(
+                "\n".join(
+                    [
+                        ".section .text",
+                        ".globl _start",
+                        "_start:",
+                        "  addi a0, x0, 9",
+                        "  ebreak",
+                        "",
+                    ]
+                )
+            )
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "program": source.name,
+                        "config": "tiny_debug",
+                        "reports": ["config", "summary"],
+                        "report_limit": 1,
+                        "report_match": "vector",
+                        "print_stats_prefix": ["instructions_"],
+                        "print_trace_limit": 1,
+                    }
+                )
+            )
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    "--experiment-json",
+                    str(manifest_path),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+
+        assert "report config_summary name=tiny_debug fields=" in result.stdout
+        assert result.stdout.count("report config field=") == 1
+        assert "report summary pipeline cycles=" in result.stdout
+        assert "stat[instructions_issued]=" in result.stdout
+        assert "trace cycle=" in result.stdout
+
     def test_run_sim_prints_comparative_sweep_reports(self) -> None:
         """The CLI should print comparative sweep summary and delta reports."""
         repo_root = Path(__file__).resolve().parent.parent
