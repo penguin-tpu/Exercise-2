@@ -123,14 +123,17 @@ You can also package a grouped sweep experiment into one manifest:
   "sweep_configs": ["baseline", "tiny_debug"],
   "sweep_sort": "cycles",
   "sweep_desc": true,
-  "sweep_limit": 2
+  "sweep_limit": 2,
+  "artifacts": {
+    "output_dir": "artifacts",
+    "sweep_json": "sweep-results.json",
+    "sweep_csv": "sweep-results.csv"
+  }
 }
 ```
 
 ```bash
-uv run python scripts/run_sim.py \
-  --sweep-manifest-json sweep.json \
-  --sweep-json sweep-results.json
+uv run python scripts/run_sim.py --sweep-manifest-json sweep.json
 ```
 
 The same grouped manifest style can drive a single run too:
@@ -139,14 +142,18 @@ The same grouped manifest style can drive a single run too:
 {
   "program": "tests/workload/scalar_int_matmul.S",
   "config": "tiny_debug",
-  "max_cycles": 100000
+  "max_cycles": 100000,
+  "artifacts": {
+    "output_dir": "artifacts",
+    "stats_json": "stats.json",
+    "trace_json": "trace.json",
+    "manifest_json": "run-manifest.json"
+  }
 }
 ```
 
 ```bash
-uv run python scripts/run_sim.py \
-  --experiment-json experiment.json \
-  --stats-json stats.json
+uv run python scripts/run_sim.py --experiment-json experiment.json
 ```
 
 ## Reports

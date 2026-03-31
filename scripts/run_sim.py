@@ -263,27 +263,32 @@ def validate_args(
     parser: argparse.ArgumentParser,
     effective_sweep_configs: list[str],
     effective_sweep_limit: int,
+    effective_stats_json: str | None,
+    effective_trace_json: str | None,
+    effective_manifest_json: str | None,
+    effective_sweep_json: str | None,
+    effective_sweep_csv: str | None,
 ) -> None:
     """Validate combinations of CLI arguments before starting simulation."""
     if effective_sweep_limit < 0:
         parser.error("--sweep-limit must be zero or greater.")
-    if args.sweep_json is not None and not effective_sweep_configs:
+    if effective_sweep_json is not None and not effective_sweep_configs:
         parser.error("--sweep-json requires at least one --sweep-config entry.")
-    if args.sweep_csv is not None and not effective_sweep_configs:
+    if effective_sweep_csv is not None and not effective_sweep_configs:
         parser.error("--sweep-csv requires at least one --sweep-config entry.")
     if args.sweep_report and not effective_sweep_configs:
         parser.error("--sweep-report requires at least one --sweep-config entry.")
     if not effective_sweep_configs:
         return
-    if args.stats_json is not None:
+    if effective_stats_json is not None:
         parser.error("--stats-json is not supported together with --sweep-config.")
     if args.stats_csv is not None:
         parser.error("--stats-csv is not supported together with --sweep-config.")
-    if args.trace_json is not None:
+    if effective_trace_json is not None:
         parser.error("--trace-json is not supported together with --sweep-config.")
     if args.trace_csv is not None:
         parser.error("--trace-csv is not supported together with --sweep-config.")
-    if args.manifest_json is not None:
+    if effective_manifest_json is not None:
         parser.error("--manifest-json is not supported together with --sweep-config.")
     if args.scratchpad_dump is not None:
         parser.error("--scratchpad-dump is not supported together with --sweep-config.")
@@ -342,6 +347,24 @@ def main() -> None:
     effective_sweep_limit = args.sweep_limit
     if effective_sweep_limit == 0 and experiment_manifest is not None and experiment_manifest.sweep_limit is not None:
         effective_sweep_limit = experiment_manifest.sweep_limit
+    effective_output_dir = args.output_dir
+    if effective_output_dir == "out" and experiment_manifest is not None and experiment_manifest.output_dir is not None:
+        effective_output_dir = experiment_manifest.output_dir
+    effective_stats_json = args.stats_json
+    if effective_stats_json is None and experiment_manifest is not None:
+        effective_stats_json = experiment_manifest.stats_json
+    effective_trace_json = args.trace_json
+    if effective_trace_json is None and experiment_manifest is not None:
+        effective_trace_json = experiment_manifest.trace_json
+    effective_manifest_json = args.manifest_json
+    if effective_manifest_json is None and experiment_manifest is not None:
+        effective_manifest_json = experiment_manifest.manifest_json
+    effective_sweep_json = args.sweep_json
+    if effective_sweep_json is None and experiment_manifest is not None:
+        effective_sweep_json = experiment_manifest.sweep_json
+    effective_sweep_csv = args.sweep_csv
+    if effective_sweep_csv is None and experiment_manifest is not None:
+        effective_sweep_csv = experiment_manifest.sweep_csv
     effective_config_name = args.config
     if (
         effective_config_name == "baseline"
@@ -350,7 +373,17 @@ def main() -> None:
         and experiment_manifest.config is not None
     ):
         effective_config_name = experiment_manifest.config
-    validate_args(args, parser, effective_sweep_configs, effective_sweep_limit)
+    validate_args(
+        args,
+        parser,
+        effective_sweep_configs,
+        effective_sweep_limit,
+        effective_stats_json,
+        effective_trace_json,
+        effective_manifest_json,
+        effective_sweep_json,
+        effective_sweep_csv,
+    )
     decoder = Decoder()
     if effective_program_path is None:
         blob = build_default_program()
@@ -415,7 +448,7 @@ def main() -> None:
                 effective_sweep_desc,
                 effective_sweep_limit if effective_sweep_limit > 0 else None,
             )
-        if args.sweep_json is not None:
+        if effective_sweep_json is not None:
             sweep_payload = {
                 "program": program.name,
                 "sort": {
@@ -426,18 +459,18 @@ def main() -> None:
                 "results": sweep_results,
             }
             serialized = json.dumps(sweep_payload, indent=2, sort_keys=True)
-            if args.sweep_json == "-":
+            if effective_sweep_json == "-":
                 print(serialized)
             else:
-                sweep_json_path = prepare_output_path(args.sweep_json, args.output_dir)
+                sweep_json_path = prepare_output_path(effective_sweep_json, effective_output_dir)
                 sweep_json_path.write_text(serialized + "\n")
-        if args.sweep_csv is not None:
+        if effective_sweep_csv is not None:
             rows = build_sweep_csv_rows(sweep_results)
-            if args.sweep_csv == "-":
+            if effective_sweep_csv == "-":
                 writer = csv.writer(sys.stdout)
                 writer.writerows(rows)
             else:
-                sweep_csv_path = prepare_output_path(args.sweep_csv, args.output_dir)
+                sweep_csv_path = prepare_output_path(effective_sweep_csv, effective_output_dir)
                 with sweep_csv_path.open("w", newline="") as handle:
                     writer = csv.writer(handle)
                     writer.writerows(rows)
@@ -477,7 +510,7 @@ def main() -> None:
             report_limit=args.report_limit if args.report_limit > 0 else None,
             report_match=args.report_match,
         )
-    if args.stats_json is not None:
+    if effective_stats_json is not None:
         stats_payload = {
             "program": program.name,
             "config": effective_config_name,
@@ -488,11 +521,11 @@ def main() -> None:
             "stats": stats,
         }
         serialized = json.dumps(stats_payload, indent=2, sort_keys=True)
-        if args.stats_json == "-":
+        if effective_stats_json == "-":
             print(serialized)
             artifact_outputs["stats_json"] = "stdout"
         else:
-            stats_json_path = prepare_output_path(args.stats_json, args.output_dir)
+            stats_json_path = prepare_output_path(effective_stats_json, effective_output_dir)
             stats_json_path.write_text(serialized + "\n")
             artifact_outputs["stats_json"] = str(stats_json_path.resolve())
     if args.stats_csv is not None:
@@ -508,7 +541,7 @@ def main() -> None:
                 writer = csv.writer(handle)
                 writer.writerows(rows)
             artifact_outputs["stats_csv"] = str(stats_csv_path.resolve())
-    if args.trace_json is not None:
+    if effective_trace_json is not None:
         trace_payload = [
             {
                 "cycle": record.cycle,
@@ -518,11 +551,11 @@ def main() -> None:
             for record in engine.trace.records
         ]
         serialized = json.dumps(trace_payload, indent=2, sort_keys=True)
-        if args.trace_json == "-":
+        if effective_trace_json == "-":
             print(serialized)
             artifact_outputs["trace_json"] = "stdout"
         else:
-            trace_json_path = prepare_output_path(args.trace_json, args.output_dir)
+            trace_json_path = prepare_output_path(effective_trace_json, effective_output_dir)
             trace_json_path.write_text(serialized + "\n")
             artifact_outputs["trace_json"] = str(trace_json_path.resolve())
     if args.trace_csv is not None:
@@ -545,7 +578,7 @@ def main() -> None:
         else:
             size = engine.config.scratchpad.capacity_bytes - offset
         payload = engine.state.scratchpad.read(offset, size)
-        scratchpad_dump_path = prepare_output_path(args.scratchpad_dump, args.output_dir)
+        scratchpad_dump_path = prepare_output_path(args.scratchpad_dump, effective_output_dir)
         scratchpad_dump_path.write_bytes(payload)
         artifact_outputs["scratchpad_dump"] = str(scratchpad_dump_path.resolve())
     if args.dram_dump is not None:
@@ -555,13 +588,13 @@ def main() -> None:
         else:
             size = engine.config.dram.capacity_bytes - offset
         payload = engine.state.dram.read(offset, size)
-        dram_dump_path = prepare_output_path(args.dram_dump, args.output_dir)
+        dram_dump_path = prepare_output_path(args.dram_dump, effective_output_dir)
         dram_dump_path.write_bytes(payload)
         artifact_outputs["dram_dump"] = str(dram_dump_path.resolve())
-    if args.manifest_json is not None:
+    if effective_manifest_json is not None:
         manifest_destination = "stdout"
-        if args.manifest_json != "-":
-            manifest_destination = str(prepare_output_path(args.manifest_json, args.output_dir).resolve())
+        if effective_manifest_json != "-":
+            manifest_destination = str(prepare_output_path(effective_manifest_json, effective_output_dir).resolve())
         manifest_payload = {
             "program": program.name,
             "config": effective_config_name,
@@ -575,7 +608,7 @@ def main() -> None:
             "manifest": manifest_destination,
         }
         serialized = json.dumps(manifest_payload, indent=2, sort_keys=True)
-        if args.manifest_json == "-":
+        if effective_manifest_json == "-":
             print(serialized)
         else:
             Path(manifest_destination).write_text(serialized + "\n")

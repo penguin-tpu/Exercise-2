@@ -41,6 +41,18 @@ class ExperimentManifest:
     """Optional DRAM image preloads for each sweep run."""
     scratchpad_loads: tuple[tuple[int, Path], ...]
     """Optional scratchpad image preloads for each sweep run."""
+    output_dir: str | None
+    """Optional base directory for relative artifact outputs."""
+    stats_json: str | None
+    """Optional single-run stats JSON output."""
+    trace_json: str | None
+    """Optional single-run trace JSON output."""
+    manifest_json: str | None
+    """Optional single-run manifest JSON output."""
+    sweep_json: str | None
+    """Optional sweep JSON output."""
+    sweep_csv: str | None
+    """Optional sweep CSV output."""
 
 
 def parse_image_load_spec(value: str) -> tuple[int, Path]:
@@ -139,6 +151,15 @@ def load_experiment_manifest(manifest_path: Path) -> ExperimentManifest:
         if not path.is_absolute():
             path = manifest_root / path
         scratchpad_loads.append((offset, path))
+    artifacts = payload.get("artifacts", {})
+    if not isinstance(artifacts, dict):
+        raise ValueError("artifacts must be a JSON object when present.")
+    output_dir = None
+    if "output_dir" in artifacts:
+        output_dir_path = Path(str(artifacts["output_dir"]))
+        if not output_dir_path.is_absolute():
+            output_dir_path = manifest_root / output_dir_path
+        output_dir = str(output_dir_path)
     return ExperimentManifest(
         program=program_path,
         base_address=base_address,
@@ -150,6 +171,12 @@ def load_experiment_manifest(manifest_path: Path) -> ExperimentManifest:
         sweep_limit=sweep_limit,
         dram_loads=tuple(dram_loads),
         scratchpad_loads=tuple(scratchpad_loads),
+        output_dir=output_dir,
+        stats_json=None if "stats_json" not in artifacts else str(artifacts["stats_json"]),
+        trace_json=None if "trace_json" not in artifacts else str(artifacts["trace_json"]),
+        manifest_json=None if "manifest_json" not in artifacts else str(artifacts["manifest_json"]),
+        sweep_json=None if "sweep_json" not in artifacts else str(artifacts["sweep_json"]),
+        sweep_csv=None if "sweep_csv" not in artifacts else str(artifacts["sweep_csv"]),
     )
 
 

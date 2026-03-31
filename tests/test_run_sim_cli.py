@@ -764,7 +764,7 @@ class TestRunSimCLI:
             temp_path = Path(temp_dir)
             source = temp_path / "manifest_sweep.S"
             manifest_path = temp_path / "sweep.json"
-            output_path = temp_path / "out" / "manifest-results.json"
+            output_path = temp_path / "artifacts" / "manifest-results.json"
             source.write_text(
                 "\n".join(
                     [
@@ -785,6 +785,10 @@ class TestRunSimCLI:
                         "sweep_sort": "cycles",
                         "sweep_desc": True,
                         "sweep_limit": 1,
+                        "artifacts": {
+                            "output_dir": "artifacts",
+                            "sweep_json": "manifest-results.json",
+                        },
                     }
                 )
             )
@@ -796,8 +800,6 @@ class TestRunSimCLI:
                     str(script),
                     "--sweep-manifest-json",
                     str(manifest_path),
-                    "--sweep-json",
-                    str(output_path),
                 ],
                 check=True,
                 text=True,
@@ -819,7 +821,7 @@ class TestRunSimCLI:
             temp_path = Path(temp_dir)
             source = temp_path / "manifest_single.S"
             manifest_path = temp_path / "experiment.json"
-            stats_path = temp_path / "out" / "stats.json"
+            stats_path = temp_path / "artifacts" / "stats.json"
             source.write_text(
                 "\n".join(
                     [
@@ -838,6 +840,10 @@ class TestRunSimCLI:
                         "program": source.name,
                         "config": "tiny_debug",
                         "max_cycles": 1000,
+                        "artifacts": {
+                            "output_dir": "artifacts",
+                            "stats_json": "stats.json",
+                        },
                     }
                 )
             )
@@ -849,8 +855,6 @@ class TestRunSimCLI:
                     str(script),
                     "--experiment-json",
                     str(manifest_path),
-                    "--stats-json",
-                    str(stats_path),
                 ],
                 check=True,
                 text=True,
