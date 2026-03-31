@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 
 
 @dataclass(frozen=True)
@@ -211,6 +211,29 @@ class AcceleratorConfig:
     """Configuration for trace capture and debugging output."""
 
 
+def snapshot_config_value(value: object) -> object:
+    """Convert one config value into a JSON-friendly recursive snapshot."""
+    if is_dataclass(value):
+        snapshot: dict[str, object] = {}
+        for config_field in fields(value):
+            snapshot[config_field.name] = snapshot_config_value(getattr(value, config_field.name))
+        return snapshot
+    if isinstance(value, tuple):
+        return [snapshot_config_value(item) for item in value]
+    if isinstance(value, list):
+        return [snapshot_config_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): snapshot_config_value(item) for key, item in value.items()}
+    return value
+
+
+def snapshot_config(config: AcceleratorConfig) -> dict[str, object]:
+    """Return one recursive dictionary snapshot for a resolved accelerator config."""
+    snapshot = snapshot_config_value(config)
+    assert isinstance(snapshot, dict)
+    return snapshot
+
+
 from perf_modeling.config.presets import (
     CONFIG_DESCRIPTIONS,
     CONFIG_PRESETS,
@@ -237,4 +260,5 @@ __all__ = [
     "available_config_names",
     "describe_named_config",
     "get_named_config",
+    "snapshot_config",
 ]

@@ -31,6 +31,42 @@ def matches_report_filter(value: str, report_match: str | None) -> bool:
     return report_match.lower() in value.lower()
 
 
+def flatten_config_snapshot(
+    config_snapshot: dict[str, object],
+    prefix: str = "",
+) -> list[tuple[str, object]]:
+    """Flatten one nested config snapshot into dotted field paths."""
+    rows: list[tuple[str, object]] = []
+    for key in sorted(config_snapshot):
+        value = config_snapshot[key]
+        field_name = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            rows.extend(flatten_config_snapshot(value, field_name))
+            continue
+        rows.append((field_name, value))
+    return rows
+
+
+def emit_config_report(
+    config_name: str,
+    config_snapshot: dict[str, object],
+    report_limit: int | None = None,
+    report_match: str | None = None,
+) -> None:
+    """Print one curated report showing the resolved accelerator configuration."""
+    rows = flatten_config_snapshot(config_snapshot)
+    rows = [
+        (field_name, value)
+        for field_name, value in rows
+        if matches_report_filter(field_name, report_match) or matches_report_filter(str(value), report_match)
+    ]
+    print(f"report config_summary name={config_name} fields={len(rows)}")
+    if report_limit is not None:
+        rows = rows[:report_limit]
+    for field_name, value in rows:
+        print(f"report config field={field_name} value={value}")
+
+
 def build_run_summary(stats: dict[str, int]) -> dict[str, object]:
     """Build one compact summary view from the flattened stats snapshot."""
     cycles = stats.get("cycles", 0)

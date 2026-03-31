@@ -9,8 +9,8 @@ import tempfile
 from pathlib import Path
 
 from perf_modeling import AcceleratorConfig
-from perf_modeling.config import available_config_names, describe_named_config, get_named_config
-from perf_modeling.reporting import emit_report
+from perf_modeling.config import available_config_names, describe_named_config, get_named_config, snapshot_config
+from perf_modeling.reporting import emit_config_report, emit_report
 
 
 class TestRunSimCLI:
@@ -46,6 +46,8 @@ class TestRunSimCLI:
         assert "program=builtin-smoke" in result.stdout
         assert stats_payload["program"] == "builtin-smoke"
         assert stats_payload["config"] == "baseline"
+        assert stats_payload["config_snapshot"]["core"]["issue_width"] == 1
+        assert stats_payload["config_snapshot"]["scratchpad"]["capacity_bytes"] == 1 << 20
         assert stats_payload["halted"] is True
         assert stats_payload["exit_code"] == 42
         assert stats_payload["stats"]["instructions_retired"] == 2
@@ -544,6 +546,8 @@ class TestRunSimCLI:
         assert "program=scalar_int_matmul.S" in result.stdout
         assert manifest_payload["program"] == "scalar_int_matmul.S"
         assert manifest_payload["config"] == "baseline"
+        assert manifest_payload["config_snapshot"]["core"]["vector"]["lanes"] == 16
+        assert manifest_payload["config_snapshot"]["dram"]["bytes_per_cycle"] == 32
         assert manifest_payload["halted"] is True
         assert manifest_payload["exit_code"] == 50
         assert manifest_payload["manifest"] == str(manifest_path.resolve())
@@ -585,6 +589,8 @@ class TestRunSimCLI:
 
         assert "program=builtin-smoke" in result.stdout
         assert stats_payload["config"] == "tiny_debug"
+        assert stats_payload["config_snapshot"]["core"]["vector"]["lanes"] == 4
+        assert stats_payload["config_snapshot"]["scratchpad"]["capacity_bytes"] == 1 << 16
         assert stats_payload["stats"]["cycles"] > 3
 
     def test_named_config_presets_are_exposed(self) -> None:
@@ -654,6 +660,8 @@ class TestRunSimCLI:
                 "--report",
                 "summary",
                 "--report",
+                "config",
+                "--report",
                 "latency",
                 "--report",
                 "occupancy",
@@ -687,6 +695,9 @@ class TestRunSimCLI:
         assert "report summary contention key=none value=0" in result.stdout
         assert "report summary events samples=3 avg_pending=0.67 max_pending=1" in result.stdout
         assert "report summary fetch cycles=1 pct=33.33 top_reason=system top_reason_cycles=1" in result.stdout
+        assert "report config_summary name=baseline fields=" in result.stdout
+        assert "report config field=core.issue_width value=1" in result.stdout
+        assert "report config field=core.vector.lanes value=16" in result.stdout
         assert "report latency opcode=addi" in result.stdout
         assert "avg_cycles=1.00" in result.stdout
         assert "report occupancy_summary unit=scalar samples=3 avg_depth=0.67 max_depth=1" in result.stdout
@@ -789,6 +800,22 @@ class TestRunSimCLI:
         assert "report contention key=scratchpad.port_conflict.sp_read_port_0 value=3 pct=50.00" in captured.out
         assert "report units unit=scalar issued_ops=4 busy_cycles=4 busy_pct=80.00 max_queue_occupancy=2" in captured.out
         assert "report isa opcode=addi issued=4 total_cycles=4" in captured.out
+
+    def test_emit_config_report_prints_flattened_snapshot(self, capsys: object) -> None:
+        """The config report helper should flatten and filter the resolved config snapshot."""
+        emit_config_report(
+            "tiny_debug",
+            snapshot_config(get_named_config("tiny_debug")),
+            report_limit=3,
+            report_match="vector",
+        )
+
+        captured = capsys.readouterr()
+
+        assert "report config_summary name=tiny_debug fields=" in captured.out
+        assert "report config field=core.vector.lanes value=4" in captured.out
+        assert "report config field=core.vector.max_vector_length value=128" in captured.out
+        assert "core.scalar.lanes" not in captured.out
 
     def test_emit_report_prints_occupancy_summary_from_histogram(self, capsys: object) -> None:
         """The occupancy report should derive average and peak depth from histogram stats."""

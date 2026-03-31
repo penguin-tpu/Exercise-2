@@ -19,9 +19,14 @@ from perf_modeling.cli_support import (
     parse_image_load_spec,
     prepare_output_path,
 )
-from perf_modeling.config import available_config_names, describe_named_config, get_named_config
+from perf_modeling.config import (
+    available_config_names,
+    describe_named_config,
+    get_named_config,
+    snapshot_config,
+)
 from perf_modeling.decode import Decoder
-from perf_modeling.reporting import build_run_summary, emit_report
+from perf_modeling.reporting import build_run_summary, emit_config_report, emit_report
 
 
 def parse_args() -> argparse.Namespace:
@@ -157,7 +162,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report",
         action="append",
-        choices=("summary", "latency", "occupancy", "events", "fetch", "memory", "contention", "stalls", "pipeline", "units", "isa"),
+        choices=("summary", "config", "latency", "occupancy", "events", "fetch", "memory", "contention", "stalls", "pipeline", "units", "isa"),
         default=[],
         help="Print a curated report for one stats family. May be repeated.",
     )
@@ -205,6 +210,7 @@ def main() -> None:
     else:
         program = decode_program_from_path(args.program, args.base_address, decoder, REPO_ROOT)
     engine = SimulatorEngine(config=get_named_config(args.config), program=program)
+    config_snapshot = snapshot_config(engine.config)
     manifest_dram_loads: list[tuple[int, Path]] = []
     manifest_scratchpad_loads: list[tuple[int, Path]] = []
     if args.memory_loads_json is not None:
@@ -232,6 +238,14 @@ def main() -> None:
         for record in engine.trace.records[-args.print_trace_limit :]:
             print(f"trace cycle={record.cycle} kind={record.kind} message={record.message}")
     for report_name in args.report:
+        if report_name == "config":
+            emit_config_report(
+                args.config,
+                config_snapshot,
+                report_limit=args.report_limit if args.report_limit > 0 else None,
+                report_match=args.report_match,
+            )
+            continue
         emit_report(
             report_name,
             stats,
@@ -242,6 +256,7 @@ def main() -> None:
         stats_payload = {
             "program": program.name,
             "config": args.config,
+            "config_snapshot": config_snapshot,
             "halted": engine.state.halted,
             "exit_code": engine.state.exit_code,
             "trap": engine.state.trap_reason,
@@ -325,6 +340,7 @@ def main() -> None:
         manifest_payload = {
             "program": program.name,
             "config": args.config,
+            "config_snapshot": config_snapshot,
             "halted": engine.state.halted,
             "exit_code": engine.state.exit_code,
             "trap": engine.state.trap_reason,

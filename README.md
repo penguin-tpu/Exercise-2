@@ -98,6 +98,7 @@ uv run python scripts/run_sim.py --list-configs
 The CLI can print curated report views from the flat stats surface:
 
 - `summary`
+- `config`
 - `latency`
 - `occupancy`
 - `events`
@@ -113,11 +114,14 @@ Example:
 
 ```bash
 uv run python scripts/run_sim.py tests/workload/scalar_int_matmul.S \
+  --report config \
   --report summary \
   --report pipeline \
   --report fetch \
   --report units
 ```
+
+Structured JSON outputs include the selected config name and a recursive config snapshot so runs can be reproduced without reopening the source preset definitions.
 
 You can also filter and limit multi-row reports:
 
