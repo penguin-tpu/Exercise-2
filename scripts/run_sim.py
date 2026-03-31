@@ -77,6 +77,14 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
                 f"report units unit={unit_name} issued_ops={stats.get(f'{unit_name}.issued_ops', 0)} busy_cycles={stats.get(f'{unit_name}.busy_cycles', 0)}"
             )
         return
+    if report_name == "isa":
+        sample_keys = sorted(key for key in stats if key.startswith("latency.") and key.endswith(".samples"))
+        for key in sample_keys:
+            opcode = key.removeprefix("latency.").removesuffix(".samples")
+            samples = stats[key]
+            total_cycles = stats.get(f"latency.{opcode}.total_cycles", 0)
+            print(f"report isa opcode={opcode} issued={samples} total_cycles={total_cycles}")
+        return
     raise ValueError(f"Unsupported report {report_name!r}.")
 
 
@@ -123,7 +131,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report",
         action="append",
-        choices=("latency", "occupancy", "memory", "contention", "units"),
+        choices=("latency", "occupancy", "memory", "contention", "units", "isa"),
         default=[],
         help="Print a curated report for one stats family. May be repeated.",
     )
