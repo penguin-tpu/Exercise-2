@@ -118,6 +118,7 @@ def build_run_summary(stats: dict[str, int]) -> dict[str, object]:
     issued = stats.get("instructions_issued", 0)
     retired = stats.get("instructions_retired", 0)
     total_stalls = sum(value for key, value in stats.items() if key.startswith("stall_"))
+    fetch_stall_cycles = stats.get("fetch_stall_cycles", 0)
 
     unit_names = sorted(
         {
@@ -188,6 +189,8 @@ def build_run_summary(stats: dict[str, int]) -> dict[str, object]:
             "issued": issued,
             "retired": retired,
             "total_stalls": total_stalls,
+            "fetch_stall_cycles": fetch_stall_cycles,
+            "fetch_stall_pct": _format_percentage(fetch_stall_cycles, cycles),
         },
         "busiest_unit": {
             "name": busiest_unit,
@@ -247,7 +250,7 @@ def emit_report(
         contention_hotspot = summary["contention_hotspot"]
         event_queue = summary["event_queue"]
         print(
-            f"report summary pipeline cycles={pipeline['cycles']} issued={pipeline['issued']} retired={pipeline['retired']} total_stalls={pipeline['total_stalls']}"
+            f"report summary pipeline cycles={pipeline['cycles']} issued={pipeline['issued']} retired={pipeline['retired']} total_stalls={pipeline['total_stalls']} fetch_stall_cycles={pipeline['fetch_stall_cycles']} fetch_stall_pct={pipeline['fetch_stall_pct']}"
         )
         print(
             f"report summary unit={busiest_unit['name']} busy_cycles={busiest_unit['busy_cycles']} busy_pct={busiest_unit['busy_pct']} issued_ops={busiest_unit['issued_ops']}"
@@ -385,8 +388,9 @@ def emit_report(
         issued = stats.get("instructions_issued", 0)
         retired = stats.get("instructions_retired", 0)
         total_stalls = sum(value for key, value in stats.items() if key.startswith("stall_"))
+        fetch_stall_cycles = stats.get("fetch_stall_cycles", 0)
         print(
-            f"report pipeline cycles={cycles} issued={issued} retired={retired} issue_per_cycle={_format_per_cycle(issued, cycles)} retire_per_cycle={_format_per_cycle(retired, cycles)} total_stalls={total_stalls}"
+            f"report pipeline cycles={cycles} issued={issued} retired={retired} issue_per_cycle={_format_per_cycle(issued, cycles)} retire_per_cycle={_format_per_cycle(retired, cycles)} total_stalls={total_stalls} fetch_stall_cycles={fetch_stall_cycles} fetch_stall_pct={_format_percentage(fetch_stall_cycles, cycles)}"
         )
         return
     if report_name == "units":

@@ -208,6 +208,8 @@ class SimulatorEngine:
     def sample_stats(self) -> None:
         """Update cycle-level statistics after issue and completion work."""
         self.stats.increment("cycles", 1)
+        if self.state.fetch_stalled and not self.state.halted:
+            self.stats.increment("fetch_stall_cycles", 1)
         self.stats.record_event_queue_occupancy(self.event_queue.pending_count())
         for unit in self.iter_units():
             self.stats.record_queue_occupancy(unit.name, unit.status.queued_ops)

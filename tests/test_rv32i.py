@@ -334,6 +334,24 @@ class TestRV32I:
         assert stats["stall_scalar_dependency"] == 2
         assert stats["cycles"] >= 8
 
+    def test_counts_fetch_stall_cycles_for_control_flow_visibility(self) -> None:
+        """Control instructions should accumulate frontend fetch-stall cycles until completion."""
+        words = [
+            encode_b_type(8, 0, 0, 0b000, 0x63),
+            encode_i_type(99, 0, 0b000, 3, 0x13),
+            encode_i_type(7, 0, 0b000, 10, 0x13),
+            0x00000073,
+        ]
+        program = Decoder().decode_bytes(pack_words(words), base_address=0x1000, name="fetch-stall-test")
+        engine = SimulatorEngine(config=self.make_config(scalar_latency_cycles=2), program=program)
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert engine.state.exit_code == 7
+        assert engine.state.scalar_regs.read(3) == 0
+        assert stats["fetch_stall_cycles"] == 4
+        assert stats["instructions_retired"] == 3
+
     def test_csr_reads_writes_and_dependency_stalls(self) -> None:
         """CSR instructions should read, write, and scoreboard correctly."""
         words = [

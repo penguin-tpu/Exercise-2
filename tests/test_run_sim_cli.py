@@ -545,6 +545,7 @@ class TestRunSimCLI:
         assert manifest_payload["manifest"] == str(manifest_path.resolve())
         assert manifest_payload["summary"]["pipeline"]["cycles"] == manifest_payload["cycles"]
         assert manifest_payload["summary"]["pipeline"]["retired"] > 0
+        assert "fetch_stall_cycles" in manifest_payload["summary"]["pipeline"]
         assert manifest_payload["summary"]["busiest_unit"]["name"] != ""
         assert manifest_payload["summary"]["latency_hotspot"]["opcode"] != ""
         assert "max_pending" in manifest_payload["summary"]["event_queue"]
@@ -614,7 +615,7 @@ class TestRunSimCLI:
             cwd=repo_root,
         )
 
-        assert "report summary pipeline cycles=3 issued=2 retired=2 total_stalls=0" in result.stdout
+        assert "report summary pipeline cycles=3 issued=2 retired=2 total_stalls=0 fetch_stall_cycles=1 fetch_stall_pct=33.33" in result.stdout
         assert "report summary unit=scalar busy_cycles=2 busy_pct=66.67 issued_ops=2" in result.stdout
         assert "report summary latency opcode=addi avg_cycles=1.00 max_cycles=1" in result.stdout
         assert "report summary memory key=none total_bytes=0" in result.stdout
@@ -629,7 +630,7 @@ class TestRunSimCLI:
         assert "report contention_summary family=stall total=0" in result.stdout
         assert "report contention_summary family=resource total=0" in result.stdout
         assert "report stalls_summary total=0 categories=0" in result.stdout
-        assert "report pipeline cycles=3 issued=2 retired=2 issue_per_cycle=0.67 retire_per_cycle=0.67 total_stalls=0" in result.stdout
+        assert "report pipeline cycles=3 issued=2 retired=2 issue_per_cycle=0.67 retire_per_cycle=0.67 total_stalls=0 fetch_stall_cycles=1 fetch_stall_pct=33.33" in result.stdout
         assert "report occupancy unit=scalar depth=1" in result.stdout
         assert "report events pending=1 samples=2" in result.stdout
         assert "report units unit=scalar issued_ops=2 busy_cycles=2 busy_pct=66.67 max_queue_occupancy=1" in result.stdout
@@ -773,12 +774,13 @@ class TestRunSimCLI:
             "instructions_retired": 3,
             "stall_fence": 2,
             "stall_scalar_dependency": 1,
+            "fetch_stall_cycles": 2,
         }
 
         emit_report("pipeline", stats)
         captured = capsys.readouterr()
 
-        assert "report pipeline cycles=10 issued=4 retired=3 issue_per_cycle=0.40 retire_per_cycle=0.30 total_stalls=3" in captured.out
+        assert "report pipeline cycles=10 issued=4 retired=3 issue_per_cycle=0.40 retire_per_cycle=0.30 total_stalls=3 fetch_stall_cycles=2 fetch_stall_pct=20.00" in captured.out
 
     def test_emit_report_prints_top_level_summary(self, capsys: object) -> None:
         """The summary report should surface top pipeline, unit, latency, memory, and contention highlights."""
@@ -786,6 +788,7 @@ class TestRunSimCLI:
             "cycles": 10,
             "instructions_issued": 5,
             "instructions_retired": 4,
+            "fetch_stall_cycles": 2,
             "scalar.issued_ops": 3,
             "scalar.busy_cycles": 6,
             "dma.issued_ops": 2,
@@ -809,7 +812,7 @@ class TestRunSimCLI:
         emit_report("summary", stats)
         captured = capsys.readouterr()
 
-        assert "report summary pipeline cycles=10 issued=5 retired=4 total_stalls=1" in captured.out
+        assert "report summary pipeline cycles=10 issued=5 retired=4 total_stalls=1 fetch_stall_cycles=2 fetch_stall_pct=20.00" in captured.out
         assert "report summary unit=scalar busy_cycles=6 busy_pct=60.00 issued_ops=3" in captured.out
         assert "report summary latency opcode=dma_copy avg_cycles=4.00 max_cycles=5" in captured.out
         assert "report summary memory key=dram.bytes_read total_bytes=64" in captured.out
