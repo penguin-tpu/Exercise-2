@@ -394,6 +394,34 @@ def main() -> None:
     effective_sweep_csv = args.sweep_csv
     if effective_sweep_csv is None and experiment_manifest is not None:
         effective_sweep_csv = experiment_manifest.sweep_csv
+    effective_scratchpad_dump_offset = args.scratchpad_dump_offset
+    if (
+        effective_scratchpad_dump_offset == 0
+        and experiment_manifest is not None
+        and experiment_manifest.scratchpad_dump_offset is not None
+    ):
+        effective_scratchpad_dump_offset = experiment_manifest.scratchpad_dump_offset
+    effective_scratchpad_dump_size = args.scratchpad_dump_size
+    if (
+        effective_scratchpad_dump_size == 0
+        and experiment_manifest is not None
+        and experiment_manifest.scratchpad_dump_size is not None
+    ):
+        effective_scratchpad_dump_size = experiment_manifest.scratchpad_dump_size
+    effective_dram_dump_offset = args.dram_dump_offset
+    if (
+        effective_dram_dump_offset == 0
+        and experiment_manifest is not None
+        and experiment_manifest.dram_dump_offset is not None
+    ):
+        effective_dram_dump_offset = experiment_manifest.dram_dump_offset
+    effective_dram_dump_size = args.dram_dump_size
+    if (
+        effective_dram_dump_size == 0
+        and experiment_manifest is not None
+        and experiment_manifest.dram_dump_size is not None
+    ):
+        effective_dram_dump_size = experiment_manifest.dram_dump_size
     effective_config_name = args.config
     if (
         effective_config_name == "baseline"
@@ -622,9 +650,9 @@ def main() -> None:
                 writer.writerows(rows)
             artifact_outputs["trace_csv"] = str(trace_csv_path.resolve())
     if effective_scratchpad_dump is not None:
-        offset = args.scratchpad_dump_offset
-        if args.scratchpad_dump_size > 0:
-            size = args.scratchpad_dump_size
+        offset = effective_scratchpad_dump_offset
+        if effective_scratchpad_dump_size > 0:
+            size = effective_scratchpad_dump_size
         else:
             size = engine.config.scratchpad.capacity_bytes - offset
         payload = engine.state.scratchpad.read(offset, size)
@@ -632,9 +660,9 @@ def main() -> None:
         scratchpad_dump_path.write_bytes(payload)
         artifact_outputs["scratchpad_dump"] = str(scratchpad_dump_path.resolve())
     if effective_dram_dump is not None:
-        offset = args.dram_dump_offset
-        if args.dram_dump_size > 0:
-            size = args.dram_dump_size
+        offset = effective_dram_dump_offset
+        if effective_dram_dump_size > 0:
+            size = effective_dram_dump_size
         else:
             size = engine.config.dram.capacity_bytes - offset
         payload = engine.state.dram.read(offset, size)

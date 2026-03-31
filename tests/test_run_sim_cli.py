@@ -1022,7 +1022,10 @@ class TestRunSimCLI:
                             "stats_csv": "stats.csv",
                             "trace_csv": "trace.csv",
                             "scratchpad_dump": "scratchpad.bin",
+                            "scratchpad_dump_size": 4,
                             "dram_dump": "dram.bin",
+                            "dram_dump_offset": 128,
+                            "dram_dump_size": 4,
                         },
                     }
                 )
@@ -1035,12 +1038,6 @@ class TestRunSimCLI:
                     str(script),
                     "--experiment-json",
                     str(manifest_path),
-                    "--scratchpad-dump-size",
-                    "4",
-                    "--dram-dump-offset",
-                    "128",
-                    "--dram-dump-size",
-                    "4",
                 ],
                 check=True,
                 text=True,

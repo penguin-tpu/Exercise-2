@@ -57,8 +57,16 @@ class ExperimentManifest:
     """Optional single-run manifest JSON output."""
     scratchpad_dump: str | None
     """Optional single-run scratchpad dump output."""
+    scratchpad_dump_offset: int | None
+    """Optional single-run scratchpad dump byte offset."""
+    scratchpad_dump_size: int | None
+    """Optional single-run scratchpad dump byte size."""
     dram_dump: str | None
     """Optional single-run DRAM dump output."""
+    dram_dump_offset: int | None
+    """Optional single-run DRAM dump byte offset."""
+    dram_dump_size: int | None
+    """Optional single-run DRAM dump byte size."""
     sweep_json: str | None
     """Optional sweep JSON output."""
     sweep_csv: str | None
@@ -189,7 +197,19 @@ def load_experiment_manifest(manifest_path: Path) -> ExperimentManifest:
         perfetto_trace=None if "perfetto_trace" not in artifacts else str(artifacts["perfetto_trace"]),
         manifest_json=None if "manifest_json" not in artifacts else str(artifacts["manifest_json"]),
         scratchpad_dump=None if "scratchpad_dump" not in artifacts else str(artifacts["scratchpad_dump"]),
+        scratchpad_dump_offset=None
+        if "scratchpad_dump_offset" not in artifacts
+        else parse_int_like(artifacts["scratchpad_dump_offset"], "artifacts.scratchpad_dump_offset"),
+        scratchpad_dump_size=None
+        if "scratchpad_dump_size" not in artifacts
+        else parse_int_like(artifacts["scratchpad_dump_size"], "artifacts.scratchpad_dump_size"),
         dram_dump=None if "dram_dump" not in artifacts else str(artifacts["dram_dump"]),
+        dram_dump_offset=None
+        if "dram_dump_offset" not in artifacts
+        else parse_int_like(artifacts["dram_dump_offset"], "artifacts.dram_dump_offset"),
+        dram_dump_size=None
+        if "dram_dump_size" not in artifacts
+        else parse_int_like(artifacts["dram_dump_size"], "artifacts.dram_dump_size"),
         sweep_json=None if "sweep_json" not in artifacts else str(artifacts["sweep_json"]),
         sweep_csv=None if "sweep_csv" not in artifacts else str(artifacts["sweep_csv"]),
     )

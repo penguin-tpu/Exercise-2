@@ -160,7 +160,10 @@ The same grouped manifest style can drive a single run too:
     "perfetto_trace": "trace.perfetto.json",
     "manifest_json": "run-manifest.json",
     "scratchpad_dump": "results.bin",
-    "dram_dump": "dram.bin"
+    "scratchpad_dump_size": 16,
+    "dram_dump": "dram.bin",
+    "dram_dump_offset": 128,
+    "dram_dump_size": 64
   }
 }
 ```
