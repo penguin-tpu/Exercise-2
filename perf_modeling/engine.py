@@ -219,17 +219,24 @@ class SimulatorEngine:
         if counter_name.startswith("stall_mem_dram_"):
             self.stats.increment("dram.contention_stalls", 1)
             self.stats.increment("memory.contention_stalls", 1)
+            self.stats.increment("memory.contention.resource.mem_dram", 1)
             return
         if counter_name.startswith("stall_mem_"):
             self.stats.increment("memory.contention_stalls", 1)
+            resource_name = counter_name.removeprefix("stall_").removesuffix("_busy")
+            self.stats.increment(f"memory.contention.resource.{resource_name}", 1)
             return
         if counter_name.startswith("stall_sp_bank_"):
             self.stats.increment("scratchpad.bank_conflict_stalls", 1)
             self.stats.increment("scratchpad.contention_stalls", 1)
+            bank_name = counter_name.removeprefix("stall_").removesuffix("_busy")
+            self.stats.increment(f"scratchpad.bank_conflict.{bank_name}", 1)
             return
         if counter_name.startswith("stall_sp_read_port_") or counter_name.startswith("stall_sp_write_port_"):
             self.stats.increment("scratchpad.port_conflict_stalls", 1)
             self.stats.increment("scratchpad.contention_stalls", 1)
+            port_name = counter_name.removeprefix("stall_").removesuffix("_busy")
+            self.stats.increment(f"scratchpad.port_conflict.{port_name}", 1)
 
     def _append_trace(self, kind: str, message: str) -> None:
         """Append one trace record when the current trace policy allows it."""

@@ -63,6 +63,7 @@ class TestMemoryContention:
         assert engine.stats.counters["stall_mem_dram_busy"] >= 1
         assert engine.stats.counters["dram.contention_stalls"] >= 1
         assert engine.stats.counters["memory.contention_stalls"] >= 1
+        assert engine.stats.counters["memory.contention.resource.mem_dram"] >= 1
         assert any("mem_dram busy" in message for message in stall_messages)
 
     def test_dma_blocks_following_scratchpad_load_until_memory_resource_is_free(self) -> None:
@@ -89,6 +90,7 @@ class TestMemoryContention:
         assert engine.stats.counters["stall_sp_bank_0_busy"] >= 1
         assert engine.stats.counters["scratchpad.bank_conflict_stalls"] >= 1
         assert engine.stats.counters["scratchpad.contention_stalls"] >= 1
+        assert engine.stats.counters["scratchpad.bank_conflict.sp_bank_0"] >= 1
         assert any("sp_bank_0 busy" in message for message in stall_messages)
 
     def test_dma_allows_following_load_from_different_scratchpad_bank(self) -> None:
@@ -177,6 +179,7 @@ class TestMemoryContention:
         assert engine.stats.counters.get("stall_sp_bank_1_busy", 0) == 0
         assert engine.stats.counters["scratchpad.port_conflict_stalls"] >= 1
         assert engine.stats.counters["scratchpad.contention_stalls"] >= 1
+        assert engine.stats.counters["scratchpad.port_conflict.sp_write_port_0"] >= 1
         assert any("sp_write_port_0 busy" in message for message in stall_messages)
         assert not any("sp_bank_1 busy" in message for message in stall_messages)
 
@@ -208,5 +211,6 @@ class TestMemoryContention:
         assert engine.stats.counters.get("stall_sp_bank_1_busy", 0) == 0
         assert engine.stats.counters["scratchpad.port_conflict_stalls"] >= 1
         assert engine.stats.counters["scratchpad.contention_stalls"] >= 1
+        assert engine.stats.counters["scratchpad.port_conflict.sp_read_port_0"] >= 1
         assert any("sp_read_port_0 busy" in message for message in stall_messages)
         assert not any("sp_bank_1 busy" in message for message in stall_messages)
