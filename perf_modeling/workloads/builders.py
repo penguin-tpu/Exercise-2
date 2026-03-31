@@ -325,6 +325,83 @@ class ProgramBuilder:
             .build(name=f"{problem.name}-vector-add-staged-smoke")
         )
 
+    def build_staged_vector_relu_smoke_test(
+        self,
+        problem: KernelProblem,
+        input_address: int,
+        output_address: int,
+        dtype: str,
+        scratchpad_base_address: int,
+    ) -> Program:
+        """Construct a DMA-to-scratchpad vector-ReLU smoke test."""
+        if len(problem.input_shapes) != 1:
+            raise ValueError("Vector-ReLU smoke tests expect exactly one input tensor.")
+        if problem.output_shape != problem.input_shapes[0]:
+            raise ValueError("Vector-ReLU smoke-test output shape must match the input tensor.")
+        payload_bytes = _tensor_payload_bytes(problem.output_shape, dtype)
+        input_scratch_address = scratchpad_base_address
+        output_scratch_address = input_scratch_address + payload_bytes
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_dma_copy(
+                source_address=input_address,
+                dest_address=input_scratch_address,
+                num_bytes=payload_bytes,
+            )
+            .emit("fence")
+            .emit_tensor_load(dest_tensor=0, address=input_scratch_address, shape=problem.input_shapes[0], dtype=dtype)
+            .emit_vector_relu(dest_tensor=1, source_tensor=0, out_dtype=dtype)
+            .emit_tensor_store(source_tensor=1, address=output_scratch_address)
+            .emit("fence")
+            .emit_dma_copy(
+                source_address=output_scratch_address,
+                dest_address=output_address,
+                num_bytes=payload_bytes,
+            )
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-vector-relu-staged-smoke")
+        )
+
+    def build_staged_vector_reduce_sum_smoke_test(
+        self,
+        problem: KernelProblem,
+        input_address: int,
+        output_address: int,
+        dtype: str,
+        scratchpad_base_address: int,
+    ) -> Program:
+        """Construct a DMA-to-scratchpad vector reduce-sum smoke test."""
+        if len(problem.input_shapes) != 1:
+            raise ValueError("Vector reduce-sum smoke tests expect exactly one input tensor.")
+        if problem.output_shape != (1,):
+            raise ValueError("Vector reduce-sum smoke-test output shape must be (1,).")
+        input_bytes = _tensor_payload_bytes(problem.input_shapes[0], dtype)
+        output_bytes = _tensor_payload_bytes(problem.output_shape, dtype)
+        input_scratch_address = scratchpad_base_address
+        output_scratch_address = input_scratch_address + input_bytes
+        return (
+            ProgramBuilder(base_address=self.base_address)
+            .emit_dma_copy(
+                source_address=input_address,
+                dest_address=input_scratch_address,
+                num_bytes=input_bytes,
+            )
+            .emit("fence")
+            .emit_tensor_load(dest_tensor=0, address=input_scratch_address, shape=problem.input_shapes[0], dtype=dtype)
+            .emit_vector_reduce_sum(dest_tensor=1, source_tensor=0, out_dtype=dtype, output_shape=problem.output_shape)
+            .emit_tensor_store(source_tensor=1, address=output_scratch_address)
+            .emit("fence")
+            .emit_dma_copy(
+                source_address=output_scratch_address,
+                dest_address=output_address,
+                num_bytes=output_bytes,
+            )
+            .emit("fence")
+            .emit("ebreak")
+            .build(name=f"{problem.name}-vector-reduce-sum-staged-smoke")
+        )
+
     def build_matmul_smoke_test(
         self,
         problem: KernelProblem,

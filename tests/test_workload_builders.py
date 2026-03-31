@@ -120,6 +120,29 @@ class TestWorkloadBuilders:
         assert stats["vector.issued_ops"] == 1
         assert stats["stall_fence"] >= 1
 
+    def test_vector_relu_smoke_builder_executes_float32_end_to_end(self) -> None:
+        """The vector-ReLU builder should support float32 tensor payloads."""
+        problem = KernelProblem(
+            name="vector-relu-float32",
+            input_shapes=((4,),),
+            output_shape=(4,),
+        )
+        program = ProgramBuilder(base_address=0x1000).build_vector_relu_smoke_test(
+            problem=problem,
+            input_address=0x200,
+            output_address=0x240,
+            dtype="float32",
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x200, pack_float32([-1.5, 0.0, 2.5, -0.25]))
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert unpack_float32(engine.state.dram.read(0x240, 16)) == (0.0, 0.0, 2.5, 0.0)
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
     def test_vector_reduce_sum_smoke_builder_executes_end_to_end(self) -> None:
         """The vector reduce-sum builder should emit a runnable tensor microbenchmark."""
         problem = KernelProblem(
@@ -140,6 +163,29 @@ class TestWorkloadBuilders:
 
         assert engine.state.halted
         assert unpack_int32(engine.state.dram.read(0x240, 4)) == (20,)
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_vector_reduce_sum_smoke_builder_executes_float32_end_to_end(self) -> None:
+        """The vector reduce-sum builder should support float32 tensor payloads."""
+        problem = KernelProblem(
+            name="vector-reduce-sum-float32",
+            input_shapes=((4,),),
+            output_shape=(1,),
+        )
+        program = ProgramBuilder(base_address=0x1000).build_vector_reduce_sum_smoke_test(
+            problem=problem,
+            input_address=0x200,
+            output_address=0x240,
+            dtype="float32",
+        )
+        engine = SimulatorEngine(config=self.make_config(), program=program)
+        engine.state.dram.write(0x200, pack_float32([0.25, 0.75, 1.25, 1.75]))
+
+        stats = engine.run(max_cycles=200).snapshot()
+
+        assert engine.state.halted
+        assert unpack_float32(engine.state.dram.read(0x240, 4)) == (4.0,)
         assert stats["vector.issued_ops"] == 1
         assert stats["stall_fence"] >= 1
 
@@ -248,6 +294,110 @@ class TestWorkloadBuilders:
         assert engine.state.halted
         assert unpack_float32(engine.state.dram.read(0x280, 16)) == (2.5, 1.5, 2.5, 3.5)
         assert stats["dma.issued_ops"] == 3
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_staged_vector_relu_smoke_builder_executes_end_to_end(self) -> None:
+        """The staged vector-ReLU builder should DMA through scratchpad before compute."""
+        problem = KernelProblem(
+            name="staged-vector-relu",
+            input_shapes=((4,),),
+            output_shape=(4,),
+        )
+        config = self.make_config()
+        program = ProgramBuilder(base_address=0x1000).build_staged_vector_relu_smoke_test(
+            problem=problem,
+            input_address=0x200,
+            output_address=0x240,
+            dtype="int32",
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+        engine = SimulatorEngine(config=config, program=program)
+        engine.state.dram.write(0x200, pack_int32([-3, 0, 5, -1]))
+
+        stats = engine.run(max_cycles=400).snapshot()
+
+        assert engine.state.halted
+        assert unpack_int32(engine.state.dram.read(0x240, 16)) == (0, 0, 5, 0)
+        assert stats["dma.issued_ops"] == 2
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_staged_vector_relu_smoke_builder_executes_float32_end_to_end(self) -> None:
+        """The staged vector-ReLU builder should support float32 tensor payloads."""
+        problem = KernelProblem(
+            name="staged-vector-relu-float32",
+            input_shapes=((4,),),
+            output_shape=(4,),
+        )
+        config = self.make_config()
+        program = ProgramBuilder(base_address=0x1000).build_staged_vector_relu_smoke_test(
+            problem=problem,
+            input_address=0x200,
+            output_address=0x240,
+            dtype="float32",
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+        engine = SimulatorEngine(config=config, program=program)
+        engine.state.dram.write(0x200, pack_float32([-1.5, 0.0, 2.5, -0.25]))
+
+        stats = engine.run(max_cycles=400).snapshot()
+
+        assert engine.state.halted
+        assert unpack_float32(engine.state.dram.read(0x240, 16)) == (0.0, 0.0, 2.5, 0.0)
+        assert stats["dma.issued_ops"] == 2
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_staged_vector_reduce_sum_smoke_builder_executes_end_to_end(self) -> None:
+        """The staged vector reduce-sum builder should DMA through scratchpad before compute."""
+        problem = KernelProblem(
+            name="staged-vector-reduce-sum",
+            input_shapes=((4,),),
+            output_shape=(1,),
+        )
+        config = self.make_config()
+        program = ProgramBuilder(base_address=0x1000).build_staged_vector_reduce_sum_smoke_test(
+            problem=problem,
+            input_address=0x200,
+            output_address=0x240,
+            dtype="int32",
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+        engine = SimulatorEngine(config=config, program=program)
+        engine.state.dram.write(0x200, pack_int32([2, 4, 6, 8]))
+
+        stats = engine.run(max_cycles=400).snapshot()
+
+        assert engine.state.halted
+        assert unpack_int32(engine.state.dram.read(0x240, 4)) == (20,)
+        assert stats["dma.issued_ops"] == 2
+        assert stats["vector.issued_ops"] == 1
+        assert stats["stall_fence"] >= 1
+
+    def test_staged_vector_reduce_sum_smoke_builder_executes_float32_end_to_end(self) -> None:
+        """The staged vector reduce-sum builder should support float32 tensor payloads."""
+        problem = KernelProblem(
+            name="staged-vector-reduce-sum-float32",
+            input_shapes=((4,),),
+            output_shape=(1,),
+        )
+        config = self.make_config()
+        program = ProgramBuilder(base_address=0x1000).build_staged_vector_reduce_sum_smoke_test(
+            problem=problem,
+            input_address=0x200,
+            output_address=0x240,
+            dtype="float32",
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+        engine = SimulatorEngine(config=config, program=program)
+        engine.state.dram.write(0x200, pack_float32([0.25, 0.75, 1.25, 1.75]))
+
+        stats = engine.run(max_cycles=400).snapshot()
+
+        assert engine.state.halted
+        assert unpack_float32(engine.state.dram.read(0x240, 4)) == (4.0,)
+        assert stats["dma.issued_ops"] == 2
         assert stats["vector.issued_ops"] == 1
         assert stats["stall_fence"] >= 1
 
