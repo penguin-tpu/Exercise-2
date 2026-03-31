@@ -113,6 +113,36 @@ class TestRunSimCLI:
         assert any(row[1] == "issue" for row in rows[1:])
         assert any(row[1] == "complete" for row in rows[1:])
 
+    def test_run_sim_writes_perfetto_trace_json(self) -> None:
+        """The CLI should emit a Perfetto-compatible trace export on request."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            perfetto_path = temp_path / "out" / "trace.perfetto.json"
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    "--perfetto-trace",
+                    str(perfetto_path),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            payload = json.loads(perfetto_path.read_text())
+            events = payload["traceEvents"]
+
+        assert "program=builtin-smoke" in result.stdout
+        assert payload["displayTimeUnit"] == "ns"
+        assert any(event["ph"] == "M" and event["name"] == "process_name" for event in events)
+        assert any(event["ph"] == "X" for event in events)
+        assert any(event["ph"] == "C" and event["name"] == "instructions_retired" for event in events)
+
     def test_run_sim_writes_scratchpad_dump_for_workload_example(self) -> None:
         """The CLI should dump scratchpad results for an assembled workload example."""
         repo_root = Path(__file__).resolve().parent.parent

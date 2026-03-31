@@ -81,6 +81,7 @@ Useful common options:
 - `--output-dir out`
 - `--stats-json stats.json`
 - `--trace-json trace.json`
+- `--perfetto-trace trace.perfetto.json`
 - `--stats-csv stats.csv`
 - `--trace-csv trace.csv`
 - `--manifest-json manifest.json`
@@ -94,6 +95,7 @@ uv run python scripts/run_sim.py tests/workload/scalar_int_matmul.S \
   --output-dir out/matmul \
   --stats-json stats.json \
   --trace-json trace.json \
+  --perfetto-trace trace.perfetto.json \
   --manifest-json manifest.json \
   --scratchpad-dump results.bin \
   --scratchpad-dump-size 16
@@ -191,6 +193,13 @@ uv run python scripts/run_sim.py tests/workload/scalar_int_matmul.S \
 ```
 
 Structured JSON outputs include the selected config name and a recursive config snapshot so runs can be reproduced without reopening the source preset definitions.
+
+Perfetto-compatible trace JSON is also available:
+
+```bash
+uv run python scripts/run_sim.py tests/workload/scalar_int_matmul.S \
+  --perfetto-trace trace.perfetto.json
+```
 
 You can also filter and limit multi-row reports:
 

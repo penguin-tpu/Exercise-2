@@ -27,6 +27,7 @@ from perf_modeling.config import (
     snapshot_config,
 )
 from perf_modeling.decode import Decoder
+from perf_modeling.perfetto import build_perfetto_trace
 from perf_modeling.reporting import (
     SWEEP_SORT_FIELDS,
     build_run_summary,
@@ -165,6 +166,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional path for a JSON trace export, or '-' to write JSON to stdout.",
     )
     parser.add_argument(
+        "--perfetto-trace",
+        type=str,
+        default=None,
+        help="Optional path for a Perfetto-compatible trace JSON export, or '-' to write JSON to stdout.",
+    )
+    parser.add_argument(
         "--trace-csv",
         type=str,
         default=None,
@@ -265,6 +272,7 @@ def validate_args(
     effective_sweep_limit: int,
     effective_stats_json: str | None,
     effective_trace_json: str | None,
+    effective_perfetto_trace: str | None,
     effective_manifest_json: str | None,
     effective_sweep_json: str | None,
     effective_sweep_csv: str | None,
@@ -286,6 +294,8 @@ def validate_args(
         parser.error("--stats-csv is not supported together with --sweep-config.")
     if effective_trace_json is not None:
         parser.error("--trace-json is not supported together with --sweep-config.")
+    if effective_perfetto_trace is not None:
+        parser.error("--perfetto-trace is not supported together with --sweep-config.")
     if args.trace_csv is not None:
         parser.error("--trace-csv is not supported together with --sweep-config.")
     if effective_manifest_json is not None:
@@ -356,6 +366,7 @@ def main() -> None:
     effective_trace_json = args.trace_json
     if effective_trace_json is None and experiment_manifest is not None:
         effective_trace_json = experiment_manifest.trace_json
+    effective_perfetto_trace = args.perfetto_trace
     effective_manifest_json = args.manifest_json
     if effective_manifest_json is None and experiment_manifest is not None:
         effective_manifest_json = experiment_manifest.manifest_json
@@ -380,6 +391,7 @@ def main() -> None:
         effective_sweep_limit,
         effective_stats_json,
         effective_trace_json,
+        effective_perfetto_trace,
         effective_manifest_json,
         effective_sweep_json,
         effective_sweep_csv,
@@ -558,6 +570,22 @@ def main() -> None:
             trace_json_path = prepare_output_path(effective_trace_json, effective_output_dir)
             trace_json_path.write_text(serialized + "\n")
             artifact_outputs["trace_json"] = str(trace_json_path.resolve())
+    if effective_perfetto_trace is not None:
+        perfetto_payload = build_perfetto_trace(
+            engine.trace.records,
+            stats,
+            engine.config.timing.frequency_hz,
+            program.name,
+            effective_config_name,
+        )
+        serialized = json.dumps(perfetto_payload, indent=2, sort_keys=True)
+        if effective_perfetto_trace == "-":
+            print(serialized)
+            artifact_outputs["perfetto_trace"] = "stdout"
+        else:
+            perfetto_trace_path = prepare_output_path(effective_perfetto_trace, effective_output_dir)
+            perfetto_trace_path.write_text(serialized + "\n")
+            artifact_outputs["perfetto_trace"] = str(perfetto_trace_path.resolve())
     if args.trace_csv is not None:
         rows = [("cycle", "kind", "message")]
         rows.extend((str(record.cycle), record.kind, record.message) for record in engine.trace.records)
