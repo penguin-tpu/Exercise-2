@@ -37,6 +37,8 @@ class Rv32uiCase:
     """Expected architectural exit code from `ebreak`."""
     max_cycles: int = 128
     """Cycle budget for the simulator run."""
+    covered_opcodes: tuple[str, ...] = ()
+    """RV32I opcodes intentionally exercised by this source."""
     scratchpad_expectations: tuple[MemoryExpectation, ...] = ()
     """Optional scratchpad values expected after execution."""
 
@@ -89,21 +91,71 @@ def read_scratchpad(engine: SimulatorEngine, expectation: MemoryExpectation) -> 
     raise ValueError(f"Unsupported scratchpad width {expectation.size}.")
 
 
+RV32I_BASE_OPCODES = {
+    "lui",
+    "auipc",
+    "jal",
+    "jalr",
+    "beq",
+    "bne",
+    "blt",
+    "bge",
+    "bltu",
+    "bgeu",
+    "lb",
+    "lh",
+    "lw",
+    "lbu",
+    "lhu",
+    "sb",
+    "sh",
+    "sw",
+    "addi",
+    "slti",
+    "sltiu",
+    "xori",
+    "ori",
+    "andi",
+    "slli",
+    "srli",
+    "srai",
+    "add",
+    "sub",
+    "sll",
+    "slt",
+    "sltu",
+    "xor",
+    "srl",
+    "sra",
+    "or",
+    "and",
+    "fence",
+    "ecall",
+    "ebreak",
+}
+
+
 CASES = (
-    Rv32uiCase(source_name="addi.S", exit_code=15),
-    Rv32uiCase(source_name="add.S", exit_code=22),
-    Rv32uiCase(source_name="beq.S", exit_code=15),
-    Rv32uiCase(source_name="jal.S", exit_code=15),
+    Rv32uiCase(source_name="addi.S", exit_code=15, covered_opcodes=("addi", "slti", "sltiu", "ebreak")),
+    Rv32uiCase(source_name="add.S", exit_code=22, covered_opcodes=("add", "sub")),
+    Rv32uiCase(source_name="and.S", exit_code=40, covered_opcodes=("sll", "srl", "sra", "xor", "and")),
+    Rv32uiCase(source_name="beq.S", exit_code=15, covered_opcodes=("beq", "bne", "blt", "bge", "bltu", "bgeu")),
+    Rv32uiCase(source_name="ecall.S", exit_code=17, covered_opcodes=("ecall",)),
+    Rv32uiCase(source_name="fence.S", exit_code=33, covered_opcodes=("fence",)),
+    Rv32uiCase(source_name="jal.S", exit_code=15, covered_opcodes=("auipc", "jal", "jalr")),
+    Rv32uiCase(source_name="lh.S", exit_code=4660, covered_opcodes=("lh",)),
     Rv32uiCase(
         source_name="lw.S",
         exit_code=4916,
+        covered_opcodes=("lui", "lb", "lw", "lbu", "lhu", "sb", "sh", "sw", "slli", "or"),
         scratchpad_expectations=(
             MemoryExpectation(address=0, size=1, value=0x80),
             MemoryExpectation(address=2, size=2, value=0x1234),
             MemoryExpectation(address=4, size=4, value=4916),
         ),
     ),
-    Rv32uiCase(source_name="sll.S", exit_code=59),
+    Rv32uiCase(source_name="sll.S", exit_code=59, covered_opcodes=("srli", "srai", "xori", "ori", "andi")),
+    Rv32uiCase(source_name="slt.S", exit_code=1, covered_opcodes=("slt", "sltu")),
 )
 
 
@@ -117,3 +169,9 @@ def test_rewritten_rv32ui_cases(case: Rv32uiCase) -> None:
     assert engine.state.exit_code == case.exit_code
     for expectation in case.scratchpad_expectations:
         assert read_scratchpad(engine, expectation) == expectation.value
+
+
+def test_rewritten_rv32ui_cases_cover_complete_rv32i_base_instruction_set() -> None:
+    """The handwritten ISA corpus should collectively cover the complete RV32I base instruction set."""
+    covered = {opcode for case in CASES for opcode in case.covered_opcodes}
+    assert covered == RV32I_BASE_OPCODES

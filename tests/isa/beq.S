@@ -16,8 +16,12 @@ signed_ok:
   addi a0, x0, 2
   ebreak
 unsigned_ok:
-  beq t1, t1, done
+  bltu t3, t2, ordered_ok
   addi a0, x0, 3
+  ebreak
+ordered_ok:
+  bge t3, x0, done
+  addi a0, x0, 4
   ebreak
 done:
   addi a0, t1, 0
