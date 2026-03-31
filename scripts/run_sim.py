@@ -337,6 +337,24 @@ def parse_args() -> argparse.Namespace:
         help="Optional path for a CSV trace export, or '-' to write CSV to stdout.",
     )
     parser.add_argument(
+        "--scratchpad-dump",
+        type=str,
+        default=None,
+        help="Optional path for a raw scratchpad dump written after simulation completes.",
+    )
+    parser.add_argument(
+        "--scratchpad-dump-offset",
+        type=lambda value: int(value, 0),
+        default=0,
+        help="Byte offset within scratchpad for the dump start.",
+    )
+    parser.add_argument(
+        "--scratchpad-dump-size",
+        type=int,
+        default=0,
+        help="Number of scratchpad bytes to dump. Zero means from offset to scratchpad end.",
+    )
+    parser.add_argument(
         "--print-stats-prefix",
         action="append",
         default=[],
@@ -457,6 +475,14 @@ def main() -> None:
             with _prepare_output_path(args.trace_csv).open("w", newline="") as handle:
                 writer = csv.writer(handle)
                 writer.writerows(rows)
+    if args.scratchpad_dump is not None:
+        offset = args.scratchpad_dump_offset
+        if args.scratchpad_dump_size > 0:
+            size = args.scratchpad_dump_size
+        else:
+            size = engine.config.scratchpad.capacity_bytes - offset
+        payload = engine.state.scratchpad.read(offset, size)
+        _prepare_output_path(args.scratchpad_dump).write_bytes(payload)
 
 
 if __name__ == "__main__":

@@ -108,6 +108,57 @@ class TestRunSimCLI:
         assert any(row[1] == "issue" for row in rows[1:])
         assert any(row[1] == "complete" for row in rows[1:])
 
+    def test_run_sim_writes_scratchpad_dump_for_workload_example(self) -> None:
+        """The CLI should dump scratchpad results for an assembled workload example."""
+        repo_root = Path(__file__).resolve().parent.parent
+        assembler = repo_root / "toolchains" / "riscv32" / "assemble_to_elf.py"
+        script = repo_root / "scripts" / "run_sim.py"
+        source = repo_root / "tests" / "workload" / "scalar_int_matmul.S"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            program_path = temp_path / "scalar_int_matmul.elf"
+            dump_path = temp_path / "out" / "results.bin"
+            subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(assembler),
+                    str(source),
+                    "--output",
+                    str(program_path),
+                ],
+                check=True,
+                text=True,
+                cwd=repo_root,
+            )
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    str(program_path),
+                    "--scratchpad-dump",
+                    str(dump_path),
+                    "--scratchpad-dump-size",
+                    "16",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            payload = dump_path.read_bytes()
+
+        assert "program=scalar_int_matmul.elf" in result.stdout
+        assert payload == (
+            (19).to_bytes(4, byteorder="little", signed=False)
+            + (22).to_bytes(4, byteorder="little", signed=False)
+            + (43).to_bytes(4, byteorder="little", signed=False)
+            + (50).to_bytes(4, byteorder="little", signed=False)
+        )
+
     def test_run_sim_prints_filtered_stats_and_trace_tail(self) -> None:
         """The CLI should print filtered stat families and a bounded trace tail on request."""
         repo_root = Path(__file__).resolve().parent.parent
