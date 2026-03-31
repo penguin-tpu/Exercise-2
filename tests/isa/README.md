@@ -1,5 +1,5 @@
 Handwritten RV32I ISA-style regression programs live here.
 
-These files are small, self-contained assembly tests inspired by the structure
-of `rv32ui` coverage, but they are rewritten for this repository and are not a
-copy of upstream sources.
+These files follow a simple per-test layout similar to `rv32ui`, with
+individual sources such as `addi.S`, `add.S`, `beq.S`, and `jal.S`.
+They are rewritten for this repository and are not a copy of upstream sources.

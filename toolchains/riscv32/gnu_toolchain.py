@@ -13,6 +13,7 @@ ASSEMBLER_NAME = "riscv64-unknown-elf-as"
 LINKER_NAME = "riscv64-unknown-elf-ld"
 OBJCOPY_NAME = "riscv64-unknown-elf-objcopy"
 COMPILER_NAME = "riscv64-unknown-elf-gcc"
+READELF_NAME = "riscv64-unknown-elf-readelf"
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,8 @@ class GnuToolchain:
     """Path to the GNU linker binary"""
     objcopy: Path
     """Path to the GNU objcopy binary"""
+    readelf: Path
+    """Path to the GNU readelf binary"""
 
 
 def repo_root_from_file(path: Path) -> Path:
@@ -69,9 +72,16 @@ def resolve_from_root(root: Path) -> GnuToolchain | None:
     assembler = bin_dir / ASSEMBLER_NAME
     linker = bin_dir / LINKER_NAME
     objcopy = bin_dir / OBJCOPY_NAME
-    if not compiler.exists() or not assembler.exists() or not linker.exists() or not objcopy.exists():
+    readelf = bin_dir / READELF_NAME
+    if not compiler.exists() or not assembler.exists() or not linker.exists() or not objcopy.exists() or not readelf.exists():
         return None
-    return GnuToolchain(compiler=compiler, assembler=assembler, linker=linker, objcopy=objcopy)
+    return GnuToolchain(
+        compiler=compiler,
+        assembler=assembler,
+        linker=linker,
+        objcopy=objcopy,
+        readelf=readelf,
+    )
 
 
 def resolve_from_path() -> GnuToolchain | None:
@@ -80,13 +90,15 @@ def resolve_from_path() -> GnuToolchain | None:
     assembler = shutil.which(ASSEMBLER_NAME)
     linker = shutil.which(LINKER_NAME)
     objcopy = shutil.which(OBJCOPY_NAME)
-    if compiler is None or assembler is None or linker is None or objcopy is None:
+    readelf = shutil.which(READELF_NAME)
+    if compiler is None or assembler is None or linker is None or objcopy is None or readelf is None:
         return None
     return GnuToolchain(
         compiler=Path(compiler),
         assembler=Path(assembler),
         linker=Path(linker),
         objcopy=Path(objcopy),
+        readelf=Path(readelf),
     )
 
 

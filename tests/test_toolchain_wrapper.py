@@ -10,6 +10,7 @@ from pathlib import Path
 from perf_modeling.config import AcceleratorConfig, DRAMConfig
 from perf_modeling.decode import Decoder
 from perf_modeling.engine import SimulatorEngine
+from toolchains.riscv32.gnu_toolchain import resolve_toolchain
 
 
 class TestToolchainWrapper:
@@ -59,6 +60,70 @@ class TestToolchainWrapper:
             )
             engine.run(max_cycles=max_cycles)
             return engine
+
+    def test_assemble_to_elf_emits_static_baremetal_image(self) -> None:
+        """The wrapper should emit a freestanding ELF without dynamic runtime dependencies."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "toolchains" / "riscv32" / "assemble_to_elf.py"
+        toolchain = resolve_toolchain(repo_root)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "program.S"
+            output = temp_path / "program.elf"
+            source.write_text(
+                ".globl _start\n"
+                "_start:\n"
+                "  addi a0, x0, 1\n"
+                "  ebreak\n"
+            )
+            subprocess.run(
+                [
+                    "python3",
+                    str(script),
+                    str(source),
+                    "--output",
+                    str(output),
+                ],
+                check=True,
+                text=True,
+                cwd=repo_root,
+            )
+            readelf = subprocess.run(
+                [str(toolchain.readelf), "-d", str(output)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        assert "There is no dynamic section in this file." in readelf.stdout
+
+    def test_assemble_to_elf_keeps_the_toolchain_baremetal(self) -> None:
+        """The wrapper should not pull in hosted libc symbols like `printf`."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "toolchains" / "riscv32" / "assemble_to_elf.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "program.S"
+            output = temp_path / "program.elf"
+            source.write_text(
+                ".globl _start\n"
+                "_start:\n"
+                "  call printf\n"
+            )
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(script),
+                    str(source),
+                    "--output",
+                    str(output),
+                ],
+                check=False,
+                text=True,
+                cwd=repo_root,
+                capture_output=True,
+            )
+        assert result.returncode != 0
+        assert "printf" in result.stderr
 
     def test_assemble_to_elf_generates_simulator_consumable_binary(self) -> None:
         """The wrapper should assemble a small RV32I program into a runnable ELF."""

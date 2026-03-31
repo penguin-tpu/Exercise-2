@@ -90,11 +90,12 @@ def read_scratchpad(engine: SimulatorEngine, expectation: MemoryExpectation) -> 
 
 
 CASES = (
-    Rv32uiCase(source_name="rv32ui_arithmetic.s", exit_code=23),
-    Rv32uiCase(source_name="rv32ui_branch_compare.s", exit_code=15),
-    Rv32uiCase(source_name="rv32ui_control_flow.s", exit_code=15),
+    Rv32uiCase(source_name="addi.S", exit_code=15),
+    Rv32uiCase(source_name="add.S", exit_code=22),
+    Rv32uiCase(source_name="beq.S", exit_code=15),
+    Rv32uiCase(source_name="jal.S", exit_code=15),
     Rv32uiCase(
-        source_name="rv32ui_memory.s",
+        source_name="lw.S",
         exit_code=4916,
         scratchpad_expectations=(
             MemoryExpectation(address=0, size=1, value=0x80),
@@ -102,7 +103,7 @@ CASES = (
             MemoryExpectation(address=4, size=4, value=4916),
         ),
     ),
-    Rv32uiCase(source_name="rv32ui_shift_logic.s", exit_code=59),
+    Rv32uiCase(source_name="sll.S", exit_code=59),
 )
 
 

@@ -16,5 +16,9 @@ signed_ok:
   addi a0, x0, 2
   ebreak
 unsigned_ok:
+  beq t1, t1, done
+  addi a0, x0, 3
+  ebreak
+done:
   addi a0, t1, 0
   ebreak
