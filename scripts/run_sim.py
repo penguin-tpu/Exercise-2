@@ -91,7 +91,23 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
             for key in stats
             if "contention" in key or "bank_conflict" in key or "port_conflict" in key
         )
+        stall_total = sum(value for key, value in stats.items() if key.startswith("stall_"))
+        resource_keys = {
+            key
+            for key in contention_keys
+            if key.startswith("memory.contention.resource.")
+            or key.startswith("scratchpad.bank_conflict.")
+            or key.startswith("scratchpad.port_conflict.")
+        }
+        resource_total = sum(stats[key] for key in resource_keys)
+        print(f"report contention_summary family=stall total={stall_total}")
+        print(f"report contention_summary family=resource total={resource_total}")
         for key in contention_keys:
+            if key in resource_keys:
+                print(
+                    f"report contention key={key} value={stats[key]} pct={_format_percentage(stats[key], resource_total)}"
+                )
+                continue
             print(f"report contention key={key} value={stats[key]}")
         return
     if report_name == "stalls":

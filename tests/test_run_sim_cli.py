@@ -85,6 +85,8 @@ class TestRunSimCLI:
                 "--report",
                 "memory",
                 "--report",
+                "contention",
+                "--report",
                 "stalls",
                 "--report",
                 "pipeline",
@@ -104,6 +106,8 @@ class TestRunSimCLI:
         assert "report occupancy_summary unit=scalar samples=3 avg_depth=0.67 max_depth=1" in result.stdout
         assert "report memory_summary direction=read total_bytes=0" in result.stdout
         assert "report memory_summary direction=write total_bytes=0" in result.stdout
+        assert "report contention_summary family=stall total=0" in result.stdout
+        assert "report contention_summary family=resource total=0" in result.stdout
         assert "report stalls_summary total=0 categories=0" in result.stdout
         assert "report pipeline cycles=3 issued=2 retired=2 issue_per_cycle=0.67 retire_per_cycle=0.67 total_stalls=0" in result.stdout
         assert "report occupancy unit=scalar depth=1" in result.stdout
@@ -139,8 +143,12 @@ class TestRunSimCLI:
         assert "report memory key=scratchpad.bytes_read value=16 pct=33.33" in captured.out
         assert "report memory_summary direction=write total_bytes=16" in captured.out
         assert "report memory key=scratchpad.bytes_written value=16 pct=100.00" in captured.out
+        assert "report contention_summary family=stall total=0" in captured.out
+        assert "report contention_summary family=resource total=6" in captured.out
         assert "report contention key=dram.contention_stalls value=2" in captured.out
-        assert "report contention key=scratchpad.bank_conflict.sp_bank_0 value=1" in captured.out
+        assert "report contention key=memory.contention.resource.mem_dram value=2 pct=33.33" in captured.out
+        assert "report contention key=scratchpad.bank_conflict.sp_bank_0 value=1 pct=16.67" in captured.out
+        assert "report contention key=scratchpad.port_conflict.sp_read_port_0 value=3 pct=50.00" in captured.out
         assert "report units unit=scalar issued_ops=4 busy_cycles=4 busy_pct=80.00 max_queue_occupancy=2" in captured.out
         assert "report isa opcode=addi issued=4 total_cycles=4" in captured.out
 
