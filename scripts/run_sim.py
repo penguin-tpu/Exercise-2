@@ -294,6 +294,21 @@ def emit_report(
             unit_name, _, depth = key.partition(".queue_occupancy.")
             print(f"report occupancy unit={unit_name} depth={depth} samples={stats[key]}")
         return
+    if report_name == "events":
+        event_keys = sorted(key for key in stats if key.startswith("event_queue.pending."))
+        event_keys = [key for key in event_keys if _matches_report_filter(key, report_match)]
+        samples = sum(stats[key] for key in event_keys)
+        weighted_depth = sum(int(key.removeprefix("event_queue.pending.")) * stats[key] for key in event_keys)
+        max_pending = stats.get("event_queue.max_pending", 0)
+        print(
+            f"report events_summary samples={samples} avg_pending={_format_average(weighted_depth, samples)} max_pending={max_pending}"
+        )
+        if report_limit is not None:
+            event_keys = sorted(event_keys, key=lambda key: (-stats[key], key))[:report_limit]
+        for key in event_keys:
+            depth = key.removeprefix("event_queue.pending.")
+            print(f"report events pending={depth} samples={stats[key]}")
+        return
     if report_name == "memory":
         read_keys = sorted(key for key in stats if key.endswith(".bytes_read"))
         write_keys = sorted(key for key in stats if key.endswith(".bytes_written"))
@@ -529,7 +544,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report",
         action="append",
-        choices=("summary", "latency", "occupancy", "memory", "contention", "stalls", "pipeline", "units", "isa"),
+        choices=("summary", "latency", "occupancy", "events", "memory", "contention", "stalls", "pipeline", "units", "isa"),
         default=[],
         help="Print a curated report for one stats family. May be repeated.",
     )

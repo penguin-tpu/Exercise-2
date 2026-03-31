@@ -593,6 +593,8 @@ class TestRunSimCLI:
                 "--report",
                 "occupancy",
                 "--report",
+                "events",
+                "--report",
                 "memory",
                 "--report",
                 "contention",
@@ -619,6 +621,7 @@ class TestRunSimCLI:
         assert "report latency opcode=addi" in result.stdout
         assert "avg_cycles=1.00" in result.stdout
         assert "report occupancy_summary unit=scalar samples=3 avg_depth=0.67 max_depth=1" in result.stdout
+        assert "report events_summary samples=3 avg_pending=0.67 max_pending=1" in result.stdout
         assert "report memory_summary direction=read total_bytes=0" in result.stdout
         assert "report memory_summary direction=write total_bytes=0" in result.stdout
         assert "report contention_summary family=stall total=0" in result.stdout
@@ -626,6 +629,7 @@ class TestRunSimCLI:
         assert "report stalls_summary total=0 categories=0" in result.stdout
         assert "report pipeline cycles=3 issued=2 retired=2 issue_per_cycle=0.67 retire_per_cycle=0.67 total_stalls=0" in result.stdout
         assert "report occupancy unit=scalar depth=1" in result.stdout
+        assert "report events pending=1 samples=2" in result.stdout
         assert "report units unit=scalar issued_ops=2 busy_cycles=2 busy_pct=66.67 max_queue_occupancy=1" in result.stdout
         assert "report isa opcode=addi issued=1 total_cycles=1" in result.stdout
 
@@ -729,6 +733,21 @@ class TestRunSimCLI:
         assert "report occupancy_summary unit=scalar samples=4 avg_depth=1.50 max_depth=2" in captured.out
         assert "report occupancy unit=scalar depth=0 samples=1" in captured.out
         assert "report occupancy unit=scalar depth=2 samples=3" in captured.out
+
+    def test_emit_report_prints_event_queue_summary_from_histogram(self, capsys: object) -> None:
+        """The events report should derive average and peak pending depth from histogram stats."""
+        stats = {
+            "event_queue.pending.0": 1,
+            "event_queue.pending.2": 3,
+            "event_queue.max_pending": 2,
+        }
+
+        emit_report("events", stats)
+        captured = capsys.readouterr()
+
+        assert "report events_summary samples=4 avg_pending=1.50 max_pending=2" in captured.out
+        assert "report events pending=0 samples=1" in captured.out
+        assert "report events pending=2 samples=3" in captured.out
 
     def test_emit_report_prints_stall_summary_and_categories(self, capsys: object) -> None:
         """The stall report should emit total and per-category counters."""
