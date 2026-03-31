@@ -811,6 +811,40 @@ class TestRunSimCLI:
         assert sweep_payload["limit"] == 1
         assert [entry["config"] for entry in sweep_payload["results"]] == ["tiny_debug"]
 
+    def test_run_sim_prints_comparative_sweep_reports(self) -> None:
+        """The CLI should print comparative sweep summary and delta reports."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                str(script),
+                "--sweep-config",
+                "baseline",
+                "--sweep-config",
+                "tiny_debug",
+                "--sweep-sort",
+                "cycles",
+                "--sweep-desc",
+                "--sweep-report",
+                "summary",
+                "--sweep-report",
+                "delta",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+            cwd=repo_root,
+        )
+
+        assert "sweep report summary configs=2 sort=cycles descending=True limit=none" in result.stdout
+        assert "sweep report winner config=tiny_debug cycles=4 retired=2 fetch_stall_cycles=2 latency_opcode=addi latency_avg_cycles=2.00" in result.stdout
+        assert "sweep report trailing config=baseline cycles=3 retired=2 fetch_stall_cycles=1" in result.stdout
+        assert "sweep report delta_reference config=tiny_debug sort=cycles sort_value=4" in result.stdout
+        assert "sweep report delta config=baseline ref=tiny_debug cycles_delta=-1 retired_delta=0 fetch_stall_delta=-1 latency_avg_delta=-1.00" in result.stdout
+
     def test_run_sim_prints_filtered_stats_and_trace_tail(self) -> None:
         """The CLI should print filtered stat families and a bounded trace tail on request."""
         repo_root = Path(__file__).resolve().parent.parent

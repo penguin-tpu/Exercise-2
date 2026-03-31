@@ -193,6 +193,71 @@ def sort_sweep_results(
     )
 
 
+def emit_sweep_report(
+    report_name: str,
+    sweep_results: list[dict[str, object]],
+    sweep_sort: str,
+    descending: bool,
+    sweep_limit: int | None,
+) -> None:
+    """Print one curated comparative report over a ranked sweep result set."""
+    if report_name == "summary":
+        print(
+            f"sweep report summary configs={len(sweep_results)} sort={sweep_sort} descending={descending} limit={'none' if sweep_limit is None else sweep_limit}"
+        )
+        if not sweep_results:
+            return
+        winner = sweep_results[0]
+        winner_summary = winner["summary"]
+        assert isinstance(winner_summary, dict)
+        winner_pipeline = winner_summary["pipeline"]
+        winner_latency = winner_summary["latency_hotspot"]
+        assert isinstance(winner_pipeline, dict)
+        assert isinstance(winner_latency, dict)
+        print(
+            f"sweep report winner config={winner['config']} cycles={winner['cycles']} retired={winner_pipeline['retired']} fetch_stall_cycles={winner_pipeline['fetch_stall_cycles']} latency_opcode={winner_latency['opcode']} latency_avg_cycles={winner_latency['avg_cycles']}"
+        )
+        if len(sweep_results) > 1:
+            trailing = sweep_results[-1]
+            trailing_summary = trailing["summary"]
+            assert isinstance(trailing_summary, dict)
+            trailing_pipeline = trailing_summary["pipeline"]
+            assert isinstance(trailing_pipeline, dict)
+            print(
+                f"sweep report trailing config={trailing['config']} cycles={trailing['cycles']} retired={trailing_pipeline['retired']} fetch_stall_cycles={trailing_pipeline['fetch_stall_cycles']}"
+            )
+        return
+    if report_name == "delta":
+        if not sweep_results:
+            print(
+                f"sweep report delta_reference config=none sort={sweep_sort} descending={descending}"
+            )
+            return
+        reference = sweep_results[0]
+        reference_summary = reference["summary"]
+        assert isinstance(reference_summary, dict)
+        reference_pipeline = reference_summary["pipeline"]
+        reference_latency = reference_summary["latency_hotspot"]
+        assert isinstance(reference_pipeline, dict)
+        assert isinstance(reference_latency, dict)
+        print(
+            f"sweep report delta_reference config={reference['config']} sort={sweep_sort} sort_value={extract_sweep_sort_value(reference, sweep_sort)}"
+        )
+        reference_latency_avg = float(reference_latency["avg_cycles"])
+        for result in sweep_results[1:]:
+            result_summary = result["summary"]
+            assert isinstance(result_summary, dict)
+            result_pipeline = result_summary["pipeline"]
+            result_latency = result_summary["latency_hotspot"]
+            assert isinstance(result_pipeline, dict)
+            assert isinstance(result_latency, dict)
+            print(
+                f"sweep report delta config={result['config']} ref={reference['config']} cycles_delta={int(result['cycles']) - int(reference['cycles'])} retired_delta={int(result_pipeline['retired']) - int(reference_pipeline['retired'])} fetch_stall_delta={int(result_pipeline['fetch_stall_cycles']) - int(reference_pipeline['fetch_stall_cycles'])} latency_avg_delta={float(result_latency['avg_cycles']) - reference_latency_avg:.2f}"
+            )
+        return
+    raise ValueError(f"Unsupported sweep report {report_name!r}.")
+
+
 def build_run_summary(stats: dict[str, int]) -> dict[str, object]:
     """Build one compact summary view from the flattened stats snapshot."""
     cycles = stats.get("cycles", 0)

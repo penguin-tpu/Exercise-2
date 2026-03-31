@@ -70,6 +70,7 @@ Useful common options:
 - `--sweep-sort cycles --sweep-desc`
 - `--sweep-limit 3`
 - `--sweep-manifest-json sweep.json`
+- `--sweep-report summary --sweep-report delta`
 - `--output-dir out`
 - `--stats-json stats.json`
 - `--trace-json trace.json`
@@ -108,6 +109,7 @@ uv run python scripts/run_sim.py tests/workload/scalar_int_matmul.S \
   --sweep-sort cycles \
   --sweep-desc \
   --sweep-limit 2 \
+  --sweep-report summary \
   --sweep-json sweep.json \
   --sweep-csv sweep.csv
 ```

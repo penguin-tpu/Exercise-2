@@ -33,6 +33,7 @@ from perf_modeling.reporting import (
     build_sweep_csv_rows,
     emit_config_report,
     emit_report,
+    emit_sweep_report,
     extract_sweep_sort_value,
     sort_sweep_results,
 )
@@ -111,6 +112,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Optional JSON manifest describing a grouped sweep experiment.",
+    )
+    parser.add_argument(
+        "--sweep-report",
+        action="append",
+        choices=("summary", "delta"),
+        default=[],
+        help="Print a curated comparative report over ranked sweep results. May be repeated.",
     )
     parser.add_argument(
         "--dram-load",
@@ -257,6 +265,8 @@ def validate_args(
         parser.error("--sweep-json requires at least one --sweep-config entry.")
     if args.sweep_csv is not None and not effective_sweep_configs:
         parser.error("--sweep-csv requires at least one --sweep-config entry.")
+    if args.sweep_report and not effective_sweep_configs:
+        parser.error("--sweep-report requires at least one --sweep-config entry.")
     if not effective_sweep_configs:
         return
     if args.stats_json is not None:
@@ -350,7 +360,7 @@ def main() -> None:
                 sweep_engine.state.dram.load_image(address, payload)
             for offset, payload in scratchpad_images:
                 sweep_engine.state.scratchpad.load_image(offset, payload)
-            sweep_stats = sweep_engine.run(max_cycles=args.max_cycles).snapshot()
+            sweep_stats = sweep_engine.run(max_cycles=effective_max_cycles).snapshot()
             sweep_summary = build_run_summary(sweep_stats)
             sweep_results.append(
                 {
@@ -377,6 +387,14 @@ def main() -> None:
             assert isinstance(busiest_unit, dict)
             print(
                 f"sweep rank={index} config={result['config']} sort={effective_sweep_sort} sort_value={sort_value} cycles={result['cycles']} retired={pipeline['retired']} halted={result['halted']} exit_code={result['exit_code']} busiest_unit={busiest_unit['name']}"
+            )
+        for report_name in args.sweep_report:
+            emit_sweep_report(
+                report_name,
+                sweep_results,
+                effective_sweep_sort,
+                effective_sweep_desc,
+                effective_sweep_limit if effective_sweep_limit > 0 else None,
             )
         if args.sweep_json is not None:
             sweep_payload = {
