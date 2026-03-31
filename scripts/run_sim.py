@@ -73,6 +73,13 @@ def emit_report(report_name: str, stats: dict[str, int]) -> None:
         for key in contention_keys:
             print(f"report contention key={key} value={stats[key]}")
         return
+    if report_name == "stalls":
+        stall_keys = sorted(key for key in stats if key.startswith("stall_"))
+        total_stalls = sum(stats[key] for key in stall_keys)
+        print(f"report stalls_summary total={total_stalls} categories={len(stall_keys)}")
+        for key in stall_keys:
+            print(f"report stalls key={key} value={stats[key]}")
+        return
     if report_name == "units":
         unit_names = sorted(
             {
@@ -145,7 +152,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report",
         action="append",
-        choices=("latency", "occupancy", "memory", "contention", "units", "isa"),
+        choices=("latency", "occupancy", "memory", "contention", "stalls", "units", "isa"),
         default=[],
         help="Print a curated report for one stats family. May be repeated.",
     )

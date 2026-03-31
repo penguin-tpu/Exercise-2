@@ -71,7 +71,7 @@ class TestRunSimCLI:
         assert "trace cycle=" in result.stdout
 
     def test_run_sim_reports_curated_latency_and_occupancy_views(self) -> None:
-        """The CLI should print curated latency, occupancy, unit, and ISA reports on request."""
+        """The CLI should print curated latency, occupancy, stall, unit, and ISA reports on request."""
         repo_root = Path(__file__).resolve().parent.parent
         script = repo_root / "scripts" / "run_sim.py"
         result = subprocess.run(
@@ -82,6 +82,8 @@ class TestRunSimCLI:
                 "latency",
                 "--report",
                 "occupancy",
+                "--report",
+                "stalls",
                 "--report",
                 "units",
                 "--report",
@@ -96,6 +98,7 @@ class TestRunSimCLI:
         assert "report latency opcode=addi" in result.stdout
         assert "avg_cycles=1.00" in result.stdout
         assert "report occupancy_summary unit=scalar samples=3 avg_depth=0.67 max_depth=1" in result.stdout
+        assert "report stalls_summary total=0 categories=0" in result.stdout
         assert "report occupancy unit=scalar depth=1" in result.stdout
         assert "report units unit=scalar issued_ops=2 busy_cycles=2 max_queue_occupancy=1" in result.stdout
         assert "report isa opcode=addi issued=1 total_cycles=1" in result.stdout
@@ -143,3 +146,17 @@ class TestRunSimCLI:
         assert "report occupancy_summary unit=scalar samples=4 avg_depth=1.50 max_depth=2" in captured.out
         assert "report occupancy unit=scalar depth=0 samples=1" in captured.out
         assert "report occupancy unit=scalar depth=2 samples=3" in captured.out
+
+    def test_emit_report_prints_stall_summary_and_categories(self, capsys: object) -> None:
+        """The stall report should emit total and per-category counters."""
+        stats = {
+            "stall_fence": 2,
+            "stall_scalar_dependency": 3,
+        }
+
+        emit_report("stalls", stats)
+        captured = capsys.readouterr()
+
+        assert "report stalls_summary total=5 categories=2" in captured.out
+        assert "report stalls key=stall_fence value=2" in captured.out
+        assert "report stalls key=stall_scalar_dependency value=3" in captured.out
