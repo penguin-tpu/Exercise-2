@@ -271,9 +271,13 @@ def validate_args(
     effective_sweep_configs: list[str],
     effective_sweep_limit: int,
     effective_stats_json: str | None,
+    effective_stats_csv: str | None,
     effective_trace_json: str | None,
+    effective_trace_csv: str | None,
     effective_perfetto_trace: str | None,
     effective_manifest_json: str | None,
+    effective_scratchpad_dump: str | None,
+    effective_dram_dump: str | None,
     effective_sweep_json: str | None,
     effective_sweep_csv: str | None,
 ) -> None:
@@ -290,19 +294,19 @@ def validate_args(
         return
     if effective_stats_json is not None:
         parser.error("--stats-json is not supported together with --sweep-config.")
-    if args.stats_csv is not None:
+    if effective_stats_csv is not None:
         parser.error("--stats-csv is not supported together with --sweep-config.")
     if effective_trace_json is not None:
         parser.error("--trace-json is not supported together with --sweep-config.")
     if effective_perfetto_trace is not None:
         parser.error("--perfetto-trace is not supported together with --sweep-config.")
-    if args.trace_csv is not None:
+    if effective_trace_csv is not None:
         parser.error("--trace-csv is not supported together with --sweep-config.")
     if effective_manifest_json is not None:
         parser.error("--manifest-json is not supported together with --sweep-config.")
-    if args.scratchpad_dump is not None:
+    if effective_scratchpad_dump is not None:
         parser.error("--scratchpad-dump is not supported together with --sweep-config.")
-    if args.dram_dump is not None:
+    if effective_dram_dump is not None:
         parser.error("--dram-dump is not supported together with --sweep-config.")
     if args.print_stats_prefix:
         parser.error("--print-stats-prefix is not supported together with --sweep-config.")
@@ -363,15 +367,27 @@ def main() -> None:
     effective_stats_json = args.stats_json
     if effective_stats_json is None and experiment_manifest is not None:
         effective_stats_json = experiment_manifest.stats_json
+    effective_stats_csv = args.stats_csv
+    if effective_stats_csv is None and experiment_manifest is not None:
+        effective_stats_csv = experiment_manifest.stats_csv
     effective_trace_json = args.trace_json
     if effective_trace_json is None and experiment_manifest is not None:
         effective_trace_json = experiment_manifest.trace_json
+    effective_trace_csv = args.trace_csv
+    if effective_trace_csv is None and experiment_manifest is not None:
+        effective_trace_csv = experiment_manifest.trace_csv
     effective_perfetto_trace = args.perfetto_trace
     if effective_perfetto_trace is None and experiment_manifest is not None:
         effective_perfetto_trace = experiment_manifest.perfetto_trace
     effective_manifest_json = args.manifest_json
     if effective_manifest_json is None and experiment_manifest is not None:
         effective_manifest_json = experiment_manifest.manifest_json
+    effective_scratchpad_dump = args.scratchpad_dump
+    if effective_scratchpad_dump is None and experiment_manifest is not None:
+        effective_scratchpad_dump = experiment_manifest.scratchpad_dump
+    effective_dram_dump = args.dram_dump
+    if effective_dram_dump is None and experiment_manifest is not None:
+        effective_dram_dump = experiment_manifest.dram_dump
     effective_sweep_json = args.sweep_json
     if effective_sweep_json is None and experiment_manifest is not None:
         effective_sweep_json = experiment_manifest.sweep_json
@@ -392,9 +408,13 @@ def main() -> None:
         effective_sweep_configs,
         effective_sweep_limit,
         effective_stats_json,
+        effective_stats_csv,
         effective_trace_json,
+        effective_trace_csv,
         effective_perfetto_trace,
         effective_manifest_json,
+        effective_scratchpad_dump,
+        effective_dram_dump,
         effective_sweep_json,
         effective_sweep_csv,
     )
@@ -542,15 +562,15 @@ def main() -> None:
             stats_json_path = prepare_output_path(effective_stats_json, effective_output_dir)
             stats_json_path.write_text(serialized + "\n")
             artifact_outputs["stats_json"] = str(stats_json_path.resolve())
-    if args.stats_csv is not None:
+    if effective_stats_csv is not None:
         rows = [("key", "value")]
         rows.extend((key, str(value)) for key, value in sorted(stats.items()))
-        if args.stats_csv == "-":
+        if effective_stats_csv == "-":
             writer = csv.writer(sys.stdout)
             writer.writerows(rows)
             artifact_outputs["stats_csv"] = "stdout"
         else:
-            stats_csv_path = prepare_output_path(args.stats_csv, args.output_dir)
+            stats_csv_path = prepare_output_path(effective_stats_csv, effective_output_dir)
             with stats_csv_path.open("w", newline="") as handle:
                 writer = csv.writer(handle)
                 writer.writerows(rows)
@@ -588,37 +608,37 @@ def main() -> None:
             perfetto_trace_path = prepare_output_path(effective_perfetto_trace, effective_output_dir)
             perfetto_trace_path.write_text(serialized + "\n")
             artifact_outputs["perfetto_trace"] = str(perfetto_trace_path.resolve())
-    if args.trace_csv is not None:
+    if effective_trace_csv is not None:
         rows = [("cycle", "kind", "message")]
         rows.extend((str(record.cycle), record.kind, record.message) for record in engine.trace.records)
-        if args.trace_csv == "-":
+        if effective_trace_csv == "-":
             writer = csv.writer(sys.stdout)
             writer.writerows(rows)
             artifact_outputs["trace_csv"] = "stdout"
         else:
-            trace_csv_path = prepare_output_path(args.trace_csv, args.output_dir)
+            trace_csv_path = prepare_output_path(effective_trace_csv, effective_output_dir)
             with trace_csv_path.open("w", newline="") as handle:
                 writer = csv.writer(handle)
                 writer.writerows(rows)
             artifact_outputs["trace_csv"] = str(trace_csv_path.resolve())
-    if args.scratchpad_dump is not None:
+    if effective_scratchpad_dump is not None:
         offset = args.scratchpad_dump_offset
         if args.scratchpad_dump_size > 0:
             size = args.scratchpad_dump_size
         else:
             size = engine.config.scratchpad.capacity_bytes - offset
         payload = engine.state.scratchpad.read(offset, size)
-        scratchpad_dump_path = prepare_output_path(args.scratchpad_dump, effective_output_dir)
+        scratchpad_dump_path = prepare_output_path(effective_scratchpad_dump, effective_output_dir)
         scratchpad_dump_path.write_bytes(payload)
         artifact_outputs["scratchpad_dump"] = str(scratchpad_dump_path.resolve())
-    if args.dram_dump is not None:
+    if effective_dram_dump is not None:
         offset = args.dram_dump_offset
         if args.dram_dump_size > 0:
             size = args.dram_dump_size
         else:
             size = engine.config.dram.capacity_bytes - offset
         payload = engine.state.dram.read(offset, size)
-        dram_dump_path = prepare_output_path(args.dram_dump, effective_output_dir)
+        dram_dump_path = prepare_output_path(effective_dram_dump, effective_output_dir)
         dram_dump_path.write_bytes(payload)
         artifact_outputs["dram_dump"] = str(dram_dump_path.resolve())
     if effective_manifest_json is not None:

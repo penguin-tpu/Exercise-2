@@ -45,12 +45,20 @@ class ExperimentManifest:
     """Optional base directory for relative artifact outputs."""
     stats_json: str | None
     """Optional single-run stats JSON output."""
+    stats_csv: str | None
+    """Optional single-run stats CSV output."""
     trace_json: str | None
     """Optional single-run trace JSON output."""
+    trace_csv: str | None
+    """Optional single-run trace CSV output."""
     perfetto_trace: str | None
     """Optional single-run Perfetto trace JSON output."""
     manifest_json: str | None
     """Optional single-run manifest JSON output."""
+    scratchpad_dump: str | None
+    """Optional single-run scratchpad dump output."""
+    dram_dump: str | None
+    """Optional single-run DRAM dump output."""
     sweep_json: str | None
     """Optional sweep JSON output."""
     sweep_csv: str | None
@@ -175,9 +183,13 @@ def load_experiment_manifest(manifest_path: Path) -> ExperimentManifest:
         scratchpad_loads=tuple(scratchpad_loads),
         output_dir=output_dir,
         stats_json=None if "stats_json" not in artifacts else str(artifacts["stats_json"]),
+        stats_csv=None if "stats_csv" not in artifacts else str(artifacts["stats_csv"]),
         trace_json=None if "trace_json" not in artifacts else str(artifacts["trace_json"]),
+        trace_csv=None if "trace_csv" not in artifacts else str(artifacts["trace_csv"]),
         perfetto_trace=None if "perfetto_trace" not in artifacts else str(artifacts["perfetto_trace"]),
         manifest_json=None if "manifest_json" not in artifacts else str(artifacts["manifest_json"]),
+        scratchpad_dump=None if "scratchpad_dump" not in artifacts else str(artifacts["scratchpad_dump"]),
+        dram_dump=None if "dram_dump" not in artifacts else str(artifacts["dram_dump"]),
         sweep_json=None if "sweep_json" not in artifacts else str(artifacts["sweep_json"]),
         sweep_csv=None if "sweep_csv" not in artifacts else str(artifacts["sweep_csv"]),
     )

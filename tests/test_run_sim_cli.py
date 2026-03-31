@@ -985,6 +985,83 @@ class TestRunSimCLI:
         assert payload["displayTimeUnit"] == "ns"
         assert any(event["ph"] == "X" for event in payload["traceEvents"])
 
+    def test_run_sim_loads_csv_and_dump_paths_from_experiment_manifest(self) -> None:
+        """A grouped single-run manifest should be able to own CSV and dump artifact paths."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "manifest_artifacts.S"
+            manifest_path = temp_path / "experiment.json"
+            stats_csv_path = temp_path / "artifacts" / "stats.csv"
+            trace_csv_path = temp_path / "artifacts" / "trace.csv"
+            scratchpad_dump_path = temp_path / "artifacts" / "scratchpad.bin"
+            dram_dump_path = temp_path / "artifacts" / "dram.bin"
+            source.write_text(
+                "\n".join(
+                    [
+                        ".section .text",
+                        ".globl _start",
+                        "_start:",
+                        "  lui t0, 0x20000",
+                        "  addi t1, x0, 55",
+                        "  sw t1, 0(t0)",
+                        "  addi t2, x0, 128",
+                        "  sw t1, 0(t2)",
+                        "  ebreak",
+                        "",
+                    ]
+                )
+            )
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "program": source.name,
+                        "artifacts": {
+                            "output_dir": "artifacts",
+                            "stats_csv": "stats.csv",
+                            "trace_csv": "trace.csv",
+                            "scratchpad_dump": "scratchpad.bin",
+                            "dram_dump": "dram.bin",
+                        },
+                    }
+                )
+            )
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    "--experiment-json",
+                    str(manifest_path),
+                    "--scratchpad-dump-size",
+                    "4",
+                    "--dram-dump-offset",
+                    "128",
+                    "--dram-dump-size",
+                    "4",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            with stats_csv_path.open(newline="") as handle:
+                stats_rows = list(csv.reader(handle))
+            with trace_csv_path.open(newline="") as handle:
+                trace_rows = list(csv.reader(handle))
+            scratchpad_payload = scratchpad_dump_path.read_bytes()
+            dram_payload = dram_dump_path.read_bytes()
+
+        assert "program=manifest_artifacts.S" in result.stdout
+        assert stats_rows[0] == ["key", "value"]
+        assert any(row[0] == "instructions_retired" for row in stats_rows[1:])
+        assert trace_rows[0] == ["cycle", "kind", "message"]
+        assert any(row[1] == "issue" for row in trace_rows[1:])
+        assert scratchpad_payload == (55).to_bytes(4, byteorder="little", signed=False)
+        assert dram_payload == (55).to_bytes(4, byteorder="little", signed=False)
+
     def test_run_sim_uses_manifest_config_name_in_config_report(self) -> None:
         """The config report should use the resolved manifest-selected config name."""
         repo_root = Path(__file__).resolve().parent.parent
