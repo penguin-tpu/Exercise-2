@@ -1,4 +1,4 @@
-"""Configuration dataclasses for the accelerator model."""
+"""Configuration dataclasses and preset helpers for the accelerator model."""
 
 from __future__ import annotations
 
@@ -209,3 +209,25 @@ class AcceleratorConfig:
     """Configuration for simulator-wide timing and policy knobs."""
     trace: TraceConfig = field(default_factory=TraceConfig)
     """Configuration for trace capture and debugging output."""
+
+
+from perf_modeling.config.presets import CONFIG_PRESETS, available_config_names, get_named_config
+
+__all__ = [
+    "AcceleratorConfig",
+    "CONFIG_PRESETS",
+    "CoreConfig",
+    "DMAConfig",
+    "DRAMConfig",
+    "MXUConfig",
+    "MachineConfig",
+    "RegisterFileConfig",
+    "ScalarUnitConfig",
+    "ScratchpadConfig",
+    "TensorFileConfig",
+    "TimingConfig",
+    "TraceConfig",
+    "VectorUnitConfig",
+    "available_config_names",
+    "get_named_config",
+]

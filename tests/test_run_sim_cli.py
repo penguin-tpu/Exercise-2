@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from perf_modeling import AcceleratorConfig
+from perf_modeling.config import available_config_names, get_named_config
 from perf_modeling.reporting import emit_report
 
 
@@ -43,6 +45,7 @@ class TestRunSimCLI:
 
         assert "program=builtin-smoke" in result.stdout
         assert stats_payload["program"] == "builtin-smoke"
+        assert stats_payload["config"] == "baseline"
         assert stats_payload["halted"] is True
         assert stats_payload["exit_code"] == 42
         assert stats_payload["stats"]["instructions_retired"] == 2
@@ -540,6 +543,7 @@ class TestRunSimCLI:
 
         assert "program=scalar_int_matmul.S" in result.stdout
         assert manifest_payload["program"] == "scalar_int_matmul.S"
+        assert manifest_payload["config"] == "baseline"
         assert manifest_payload["halted"] is True
         assert manifest_payload["exit_code"] == 50
         assert manifest_payload["manifest"] == str(manifest_path.resolve())
@@ -553,6 +557,41 @@ class TestRunSimCLI:
         assert manifest_payload["artifacts"]["stats_json"] == str((output_dir / "stats.json").resolve())
         assert manifest_payload["artifacts"]["trace_json"] == str((output_dir / "trace.json").resolve())
         assert manifest_payload["artifacts"]["scratchpad_dump"] == str((output_dir / "results.bin").resolve())
+
+    def test_run_sim_selects_named_config_preset(self) -> None:
+        """The CLI should allow selecting one of the packaged hardware config presets."""
+        repo_root = Path(__file__).resolve().parent.parent
+        script = repo_root / "scripts" / "run_sim.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            stats_path = temp_path / "out" / "stats.json"
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    str(script),
+                    "--config",
+                    "tiny_debug",
+                    "--stats-json",
+                    str(stats_path),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=repo_root,
+            )
+            stats_payload = json.loads(stats_path.read_text())
+
+        assert "program=builtin-smoke" in result.stdout
+        assert stats_payload["config"] == "tiny_debug"
+        assert stats_payload["stats"]["cycles"] > 3
+
+    def test_named_config_presets_are_exposed(self) -> None:
+        """The package should expose stable named configuration presets for CLI selection."""
+        assert available_config_names() == ("baseline", "tiny_debug", "balanced_ml", "throughput_ml")
+        assert get_named_config("baseline") == AcceleratorConfig()
+        assert get_named_config("throughput_ml").core.vector.lanes > get_named_config("baseline").core.vector.lanes
 
     def test_run_sim_prints_filtered_stats_and_trace_tail(self) -> None:
         """The CLI should print filtered stat families and a bounded trace tail on request."""

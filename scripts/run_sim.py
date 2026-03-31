@@ -19,6 +19,7 @@ from perf_modeling.cli_support import (
     parse_image_load_spec,
     prepare_output_path,
 )
+from perf_modeling.config import available_config_names, get_named_config
 from perf_modeling.decode import Decoder
 from perf_modeling.reporting import build_run_summary, emit_report
 
@@ -43,6 +44,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=100000,
         help="Maximum number of cycles to simulate before stopping.",
+    )
+    parser.add_argument(
+        "--config",
+        choices=available_config_names(),
+        default="baseline",
+        help="Named accelerator configuration preset to use for the run.",
     )
     parser.add_argument(
         "--dram-load",
@@ -188,7 +195,7 @@ def main() -> None:
         program = decoder.decode_bytes(blob, base_address=args.base_address, name="builtin-smoke")
     else:
         program = decode_program_from_path(args.program, args.base_address, decoder, REPO_ROOT)
-    engine = SimulatorEngine(config=AcceleratorConfig(), program=program)
+    engine = SimulatorEngine(config=get_named_config(args.config), program=program)
     manifest_dram_loads: list[tuple[int, Path]] = []
     manifest_scratchpad_loads: list[tuple[int, Path]] = []
     if args.memory_loads_json is not None:
@@ -225,6 +232,7 @@ def main() -> None:
     if args.stats_json is not None:
         stats_payload = {
             "program": program.name,
+            "config": args.config,
             "halted": engine.state.halted,
             "exit_code": engine.state.exit_code,
             "trap": engine.state.trap_reason,
@@ -307,6 +315,7 @@ def main() -> None:
             manifest_destination = str(prepare_output_path(args.manifest_json, args.output_dir).resolve())
         manifest_payload = {
             "program": program.name,
+            "config": args.config,
             "halted": engine.state.halted,
             "exit_code": engine.state.exit_code,
             "trap": engine.state.trap_reason,
