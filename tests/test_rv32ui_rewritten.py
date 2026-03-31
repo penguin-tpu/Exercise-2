@@ -138,7 +138,7 @@ RV32I_BASE_OPCODES = {
 
 
 CASES = (
-    Rv32uiCase(source_name="addi.S", exit_code=15, covered_opcodes=("addi", "ebreak")),
+    Rv32uiCase(source_name="addi.S", exit_code=15, covered_opcodes=("addi",)),
     Rv32uiCase(source_name="add.S", exit_code=13, covered_opcodes=("add",)),
     Rv32uiCase(source_name="and.S", exit_code=40, covered_opcodes=("and",)),
     Rv32uiCase(source_name="andi.S", exit_code=12, covered_opcodes=("andi",)),
@@ -149,15 +149,20 @@ CASES = (
     Rv32uiCase(source_name="blt.S", exit_code=13, covered_opcodes=("blt",)),
     Rv32uiCase(source_name="bltu.S", exit_code=15, covered_opcodes=("bltu",)),
     Rv32uiCase(source_name="bne.S", exit_code=12, covered_opcodes=("bne",)),
+    Rv32uiCase(source_name="ebreak.S", exit_code=23, covered_opcodes=("ebreak",)),
     Rv32uiCase(source_name="ecall.S", exit_code=17, covered_opcodes=("ecall",)),
     Rv32uiCase(source_name="fence.S", exit_code=33, covered_opcodes=("fence",)),
     Rv32uiCase(source_name="jal.S", exit_code=15, covered_opcodes=("jal",)),
     Rv32uiCase(source_name="jalr.S", exit_code=18, covered_opcodes=("jalr",)),
+    Rv32uiCase(source_name="lb.S", exit_code=1, covered_opcodes=("lb",)),
+    Rv32uiCase(source_name="lbu.S", exit_code=255, covered_opcodes=("lbu",)),
     Rv32uiCase(source_name="lh.S", exit_code=4660, covered_opcodes=("lh",)),
+    Rv32uiCase(source_name="lhu.S", exit_code=4660, covered_opcodes=("lhu",)),
+    Rv32uiCase(source_name="lui.S", exit_code=4096, covered_opcodes=("lui",)),
     Rv32uiCase(
         source_name="lw.S",
         exit_code=4916,
-        covered_opcodes=("lui", "lb", "lw", "lbu", "lhu", "sb", "sh", "sw"),
+        covered_opcodes=("lw",),
         scratchpad_expectations=(
             MemoryExpectation(address=0, size=1, value=0x80),
             MemoryExpectation(address=2, size=2, value=0x1234),
@@ -176,7 +181,10 @@ CASES = (
     Rv32uiCase(source_name="srai.S", exit_code=8, covered_opcodes=("srai",)),
     Rv32uiCase(source_name="srl.S", exit_code=8, covered_opcodes=("srl",)),
     Rv32uiCase(source_name="srli.S", exit_code=8, covered_opcodes=("srli",)),
+    Rv32uiCase(source_name="sb.S", exit_code=52, covered_opcodes=("sb",)),
+    Rv32uiCase(source_name="sh.S", exit_code=4660, covered_opcodes=("sh",)),
     Rv32uiCase(source_name="sub.S", exit_code=12, covered_opcodes=("sub",)),
+    Rv32uiCase(source_name="sw.S", exit_code=852, covered_opcodes=("sw",)),
     Rv32uiCase(source_name="xor.S", exit_code=5, covered_opcodes=("xor",)),
     Rv32uiCase(source_name="xori.S", exit_code=5, covered_opcodes=("xori",)),
 )

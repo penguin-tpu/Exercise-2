@@ -2,5 +2,6 @@ Handwritten RV32I ISA-style regression programs live here.
 
 These files follow a simple per-test layout similar to `rv32ui`, with
 individual sources such as `addi.S`, `add.S`, `beq.S`, `bne.S`,
-`auipc.S`, `jal.S`, `jalr.S`, `slti.S`, `slli.S`, `or.S`, and `sub.S`.
+`auipc.S`, `jal.S`, `jalr.S`, `slti.S`, `slli.S`, `or.S`, `sub.S`,
+`lui.S`, and `sw.S`.
 They are rewritten for this repository and are not a copy of upstream sources.
