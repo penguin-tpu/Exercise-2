@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -29,6 +30,18 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=100000,
         help="Maximum number of cycles to simulate before stopping.",
+    )
+    parser.add_argument(
+        "--stats-json",
+        type=str,
+        default=None,
+        help="Optional path for a JSON stats export, or '-' to write JSON to stdout.",
+    )
+    parser.add_argument(
+        "--trace-json",
+        type=str,
+        default=None,
+        help="Optional path for a JSON trace export, or '-' to write JSON to stdout.",
     )
     return parser.parse_args()
 
@@ -59,6 +72,33 @@ def main() -> None:
     print(
         f"cycles={stats.get('cycles', 0)} issued={stats.get('instructions_issued', 0)} retired={stats.get('instructions_retired', 0)}"
     )
+    if args.stats_json is not None:
+        stats_payload = {
+            "program": program.name,
+            "halted": engine.state.halted,
+            "exit_code": engine.state.exit_code,
+            "trap": engine.state.trap_reason,
+            "stats": stats,
+        }
+        serialized = json.dumps(stats_payload, indent=2, sort_keys=True)
+        if args.stats_json == "-":
+            print(serialized)
+        else:
+            Path(args.stats_json).write_text(serialized + "\n")
+    if args.trace_json is not None:
+        trace_payload = [
+            {
+                "cycle": record.cycle,
+                "kind": record.kind,
+                "message": record.message,
+            }
+            for record in engine.trace.records
+        ]
+        serialized = json.dumps(trace_payload, indent=2, sort_keys=True)
+        if args.trace_json == "-":
+            print(serialized)
+        else:
+            Path(args.trace_json).write_text(serialized + "\n")
 
 
 if __name__ == "__main__":
