@@ -374,6 +374,12 @@ def parse_args() -> argparse.Namespace:
         help="Optional path for a CSV trace export, or '-' to write CSV to stdout.",
     )
     parser.add_argument(
+        "--manifest-json",
+        type=str,
+        default=None,
+        help="Optional path for a JSON run manifest, or '-' to write the manifest to stdout.",
+    )
+    parser.add_argument(
         "--scratchpad-dump",
         type=str,
         default=None,
@@ -469,6 +475,7 @@ def main() -> None:
         program = _decode_program_from_path(args.program, args.base_address, decoder)
     engine = SimulatorEngine(config=AcceleratorConfig(), program=program)
     stats = engine.run(max_cycles=args.max_cycles).snapshot()
+    artifact_outputs: dict[str, str] = {}
     print(f"program={program.name}")
     print(f"halted={engine.state.halted} exit_code={engine.state.exit_code} trap={engine.state.trap_reason}")
     print(
@@ -499,18 +506,24 @@ def main() -> None:
         serialized = json.dumps(stats_payload, indent=2, sort_keys=True)
         if args.stats_json == "-":
             print(serialized)
+            artifact_outputs["stats_json"] = "stdout"
         else:
-            _prepare_output_path(args.stats_json, args.output_dir).write_text(serialized + "\n")
+            stats_json_path = _prepare_output_path(args.stats_json, args.output_dir)
+            stats_json_path.write_text(serialized + "\n")
+            artifact_outputs["stats_json"] = str(stats_json_path.resolve())
     if args.stats_csv is not None:
         rows = [("key", "value")]
         rows.extend((key, str(value)) for key, value in sorted(stats.items()))
         if args.stats_csv == "-":
             writer = csv.writer(sys.stdout)
             writer.writerows(rows)
+            artifact_outputs["stats_csv"] = "stdout"
         else:
-            with _prepare_output_path(args.stats_csv, args.output_dir).open("w", newline="") as handle:
+            stats_csv_path = _prepare_output_path(args.stats_csv, args.output_dir)
+            with stats_csv_path.open("w", newline="") as handle:
                 writer = csv.writer(handle)
                 writer.writerows(rows)
+            artifact_outputs["stats_csv"] = str(stats_csv_path.resolve())
     if args.trace_json is not None:
         trace_payload = [
             {
@@ -523,18 +536,24 @@ def main() -> None:
         serialized = json.dumps(trace_payload, indent=2, sort_keys=True)
         if args.trace_json == "-":
             print(serialized)
+            artifact_outputs["trace_json"] = "stdout"
         else:
-            _prepare_output_path(args.trace_json, args.output_dir).write_text(serialized + "\n")
+            trace_json_path = _prepare_output_path(args.trace_json, args.output_dir)
+            trace_json_path.write_text(serialized + "\n")
+            artifact_outputs["trace_json"] = str(trace_json_path.resolve())
     if args.trace_csv is not None:
         rows = [("cycle", "kind", "message")]
         rows.extend((str(record.cycle), record.kind, record.message) for record in engine.trace.records)
         if args.trace_csv == "-":
             writer = csv.writer(sys.stdout)
             writer.writerows(rows)
+            artifact_outputs["trace_csv"] = "stdout"
         else:
-            with _prepare_output_path(args.trace_csv, args.output_dir).open("w", newline="") as handle:
+            trace_csv_path = _prepare_output_path(args.trace_csv, args.output_dir)
+            with trace_csv_path.open("w", newline="") as handle:
                 writer = csv.writer(handle)
                 writer.writerows(rows)
+            artifact_outputs["trace_csv"] = str(trace_csv_path.resolve())
     if args.scratchpad_dump is not None:
         offset = args.scratchpad_dump_offset
         if args.scratchpad_dump_size > 0:
@@ -542,7 +561,9 @@ def main() -> None:
         else:
             size = engine.config.scratchpad.capacity_bytes - offset
         payload = engine.state.scratchpad.read(offset, size)
-        _prepare_output_path(args.scratchpad_dump, args.output_dir).write_bytes(payload)
+        scratchpad_dump_path = _prepare_output_path(args.scratchpad_dump, args.output_dir)
+        scratchpad_dump_path.write_bytes(payload)
+        artifact_outputs["scratchpad_dump"] = str(scratchpad_dump_path.resolve())
     if args.dram_dump is not None:
         offset = args.dram_dump_offset
         if args.dram_dump_size > 0:
@@ -550,7 +571,27 @@ def main() -> None:
         else:
             size = engine.config.dram.capacity_bytes - offset
         payload = engine.state.dram.read(offset, size)
-        _prepare_output_path(args.dram_dump, args.output_dir).write_bytes(payload)
+        dram_dump_path = _prepare_output_path(args.dram_dump, args.output_dir)
+        dram_dump_path.write_bytes(payload)
+        artifact_outputs["dram_dump"] = str(dram_dump_path.resolve())
+    if args.manifest_json is not None:
+        manifest_destination = "stdout"
+        if args.manifest_json != "-":
+            manifest_destination = str(_prepare_output_path(args.manifest_json, args.output_dir).resolve())
+        manifest_payload = {
+            "program": program.name,
+            "halted": engine.state.halted,
+            "exit_code": engine.state.exit_code,
+            "trap": engine.state.trap_reason,
+            "cycles": stats.get("cycles", 0),
+            "artifacts": artifact_outputs,
+            "manifest": manifest_destination,
+        }
+        serialized = json.dumps(manifest_payload, indent=2, sort_keys=True)
+        if args.manifest_json == "-":
+            print(serialized)
+        else:
+            Path(manifest_destination).write_text(serialized + "\n")
 
 
 if __name__ == "__main__":
