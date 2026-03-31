@@ -112,6 +112,50 @@ class TestPyTorchWorkloads:
         assert stats["mxu.issued_ops"] == 2
         assert stats["vector.issued_ops"] == 3
 
+    def test_two_layer_mlp_torch_lowering_supports_batch_size_two(self) -> None:
+        """The two-layer Torch lowering bridge should expand biases to match larger batch sizes."""
+        bundle = build_two_layer_mlp_from_torch_sequential(
+            model=self.build_reference_model(),
+            input_tensor=torch.tensor([[1.0, -2.0], [0.5, 1.0]], dtype=torch.float32),
+        )
+
+        engine = SimulatorEngine(config=self.make_config(), program=bundle.program)
+        for address, payload in bundle.dram_image.items():
+            engine.state.dram.write(address, payload)
+
+        stats = engine.run(max_cycles=700).snapshot()
+
+        assert engine.state.halted
+        assert bundle.output_shape == (2, 2)
+        assert unpack_float32(engine.state.dram.read(bundle.output_address, 16)) == bundle.expected_output
+        assert bundle.expected_output == (-4.0, 1.375, 4.875, 0.0)
+        assert stats["mxu.issued_ops"] == 2
+        assert stats["vector.issued_ops"] == 3
+
+    def test_staged_two_layer_mlp_torch_lowering_supports_batch_size_two(self) -> None:
+        """The staged two-layer Torch lowering bridge should also support larger batch sizes."""
+        config = self.make_config()
+        bundle = build_two_layer_mlp_from_torch_sequential(
+            model=self.build_reference_model(),
+            input_tensor=torch.tensor([[1.0, -2.0], [0.5, 1.0]], dtype=torch.float32),
+            staged=True,
+            scratchpad_base_address=config.machine.scratchpad_base_address,
+        )
+
+        engine = SimulatorEngine(config=config, program=bundle.program)
+        for address, payload in bundle.dram_image.items():
+            engine.state.dram.write(address, payload)
+
+        stats = engine.run(max_cycles=1000).snapshot()
+
+        assert engine.state.halted
+        assert bundle.output_shape == (2, 2)
+        assert unpack_float32(engine.state.dram.read(bundle.output_address, 16)) == bundle.expected_output
+        assert bundle.expected_output == (-4.0, 1.375, 4.875, 0.0)
+        assert stats["dma.issued_ops"] == 6
+        assert stats["mxu.issued_ops"] == 2
+        assert stats["vector.issued_ops"] == 3
+
     def test_generic_torch_lowering_supports_deeper_linear_relu_sequential_models(self) -> None:
         """The generic Torch lowering helper should support deeper alternating Linear/ReLU sequentials."""
         bundle = build_linear_relu_sequential_from_torch(

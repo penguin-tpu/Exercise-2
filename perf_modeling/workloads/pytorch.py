@@ -85,7 +85,7 @@ def build_linear_relu_sequential_from_torch(
     current_shape = tuple(int(dimension) for dimension in input_value.shape)
     for layer in linear_layers:
         weight_value = layer.weight.detach().to(dtype=torch.float32).transpose(0, 1).contiguous()
-        bias_value = layer.bias.detach().to(dtype=torch.float32).reshape(1, -1).contiguous()
+        bias_value = layer.bias.detach().to(dtype=torch.float32).reshape(1, -1).expand(current_shape[0], -1).contiguous()
         layer_values.append((weight_value, bias_value))
         input_shapes.append(tuple(int(dimension) for dimension in weight_value.shape))
         input_shapes.append(tuple(int(dimension) for dimension in bias_value.shape))
