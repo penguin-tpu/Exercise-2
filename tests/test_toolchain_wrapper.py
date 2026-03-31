@@ -61,6 +61,18 @@ class TestToolchainWrapper:
         assert engine.state.halted
         assert engine.state.exit_code == 5
 
+    def test_assemble_to_elf_supports_preprocessed_sources(self) -> None:
+        """The wrapper should accept `.S` sources that rely on the GNU preprocessor."""
+        engine = self.build_and_run(
+            "#define EXIT_CODE 9\n"
+            ".globl _start\n"
+            "_start:\n"
+            "  addi a0, x0, EXIT_CODE\n"
+            "  ebreak\n"
+        )
+        assert engine.state.halted
+        assert engine.state.exit_code == 9
+
     def test_assemble_to_elf_handles_local_labels_and_branch_loops(self) -> None:
         """The wrapper should support self-contained assembly with local control flow."""
         engine = self.build_and_run(
