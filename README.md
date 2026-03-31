@@ -67,6 +67,7 @@ Useful common options:
 - `--sweep-config baseline --sweep-config tiny_debug`
 - `--sweep-json sweep.json`
 - `--sweep-csv sweep.csv`
+- `--sweep-sort cycles --sweep-desc`
 - `--output-dir out`
 - `--stats-json stats.json`
 - `--trace-json trace.json`
@@ -102,6 +103,8 @@ Sweep one workload across multiple named presets:
 uv run python scripts/run_sim.py tests/workload/scalar_int_matmul.S \
   --sweep-config baseline \
   --sweep-config tiny_debug \
+  --sweep-sort cycles \
+  --sweep-desc \
   --sweep-json sweep.json \
   --sweep-csv sweep.csv
 ```

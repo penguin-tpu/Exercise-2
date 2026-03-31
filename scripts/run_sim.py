@@ -26,7 +26,15 @@ from perf_modeling.config import (
     snapshot_config,
 )
 from perf_modeling.decode import Decoder
-from perf_modeling.reporting import build_run_summary, build_sweep_csv_rows, emit_config_report, emit_report
+from perf_modeling.reporting import (
+    SWEEP_SORT_FIELDS,
+    build_run_summary,
+    build_sweep_csv_rows,
+    emit_config_report,
+    emit_report,
+    extract_sweep_sort_value,
+    sort_sweep_results,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -79,6 +87,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Optional path for a CSV export of multi-config sweep results, or '-' to write CSV to stdout.",
+    )
+    parser.add_argument(
+        "--sweep-sort",
+        choices=SWEEP_SORT_FIELDS,
+        default="config",
+        help="Metric used to order sweep results before printing and export.",
+    )
+    parser.add_argument(
+        "--sweep-desc",
+        action="store_true",
+        help="Reverse the selected sweep ordering metric.",
     )
     parser.add_argument(
         "--dram-load",
@@ -285,9 +304,6 @@ def main() -> None:
                 sweep_engine.state.scratchpad.load_image(offset, payload)
             sweep_stats = sweep_engine.run(max_cycles=args.max_cycles).snapshot()
             sweep_summary = build_run_summary(sweep_stats)
-            print(
-                f"sweep config={config_name} cycles={sweep_stats.get('cycles', 0)} retired={sweep_stats.get('instructions_retired', 0)} halted={sweep_engine.state.halted} exit_code={sweep_engine.state.exit_code} busiest_unit={sweep_summary['busiest_unit']['name']}"
-            )
             sweep_results.append(
                 {
                     "config": config_name,
@@ -300,9 +316,25 @@ def main() -> None:
                     "stats": sweep_stats,
                 }
             )
+        sweep_results = sort_sweep_results(sweep_results, args.sweep_sort, args.sweep_desc)
+        for index, result in enumerate(sweep_results, start=1):
+            sort_value = extract_sweep_sort_value(result, args.sweep_sort)
+            summary = result["summary"]
+            assert isinstance(summary, dict)
+            pipeline = summary["pipeline"]
+            busiest_unit = summary["busiest_unit"]
+            assert isinstance(pipeline, dict)
+            assert isinstance(busiest_unit, dict)
+            print(
+                f"sweep rank={index} config={result['config']} sort={args.sweep_sort} sort_value={sort_value} cycles={result['cycles']} retired={pipeline['retired']} halted={result['halted']} exit_code={result['exit_code']} busiest_unit={busiest_unit['name']}"
+            )
         if args.sweep_json is not None:
             sweep_payload = {
                 "program": program.name,
+                "sort": {
+                    "field": args.sweep_sort,
+                    "descending": args.sweep_desc,
+                },
                 "results": sweep_results,
             }
             serialized = json.dumps(sweep_payload, indent=2, sort_keys=True)

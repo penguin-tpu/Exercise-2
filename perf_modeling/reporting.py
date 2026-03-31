@@ -2,6 +2,18 @@
 
 from __future__ import annotations
 
+SWEEP_SORT_FIELDS = (
+    "config",
+    "cycles",
+    "issued",
+    "retired",
+    "fetch_stall_cycles",
+    "busiest_unit_busy_cycles",
+    "latency_avg_cycles",
+    "event_max_pending",
+)
+"""Stable set of CLI-exposed sort keys for multi-config sweep results."""
+
 
 def format_average(total_cycles: int, samples: int) -> str:
     """Format one average value for human-readable reports."""
@@ -135,6 +147,50 @@ def build_sweep_csv_rows(sweep_results: list[dict[str, object]]) -> list[tuple[s
             )
         )
     return rows
+
+
+def extract_sweep_sort_value(result: dict[str, object], sweep_sort: str) -> str | int | float:
+    """Return one sortable value from a sweep result record."""
+    if sweep_sort == "config":
+        return str(result["config"])
+    summary = result["summary"]
+    assert isinstance(summary, dict)
+    pipeline = summary["pipeline"]
+    busiest_unit = summary["busiest_unit"]
+    latency_hotspot = summary["latency_hotspot"]
+    event_queue = summary["event_queue"]
+    assert isinstance(pipeline, dict)
+    assert isinstance(busiest_unit, dict)
+    assert isinstance(latency_hotspot, dict)
+    assert isinstance(event_queue, dict)
+    if sweep_sort == "cycles":
+        return int(result["cycles"])
+    if sweep_sort == "issued":
+        return int(pipeline["issued"])
+    if sweep_sort == "retired":
+        return int(pipeline["retired"])
+    if sweep_sort == "fetch_stall_cycles":
+        return int(pipeline["fetch_stall_cycles"])
+    if sweep_sort == "busiest_unit_busy_cycles":
+        return int(busiest_unit["busy_cycles"])
+    if sweep_sort == "latency_avg_cycles":
+        return float(latency_hotspot["avg_cycles"])
+    if sweep_sort == "event_max_pending":
+        return int(event_queue["max_pending"])
+    raise ValueError(f"Unsupported sweep sort field {sweep_sort!r}.")
+
+
+def sort_sweep_results(
+    sweep_results: list[dict[str, object]],
+    sweep_sort: str,
+    descending: bool,
+) -> list[dict[str, object]]:
+    """Return sweep results ordered by one exposed sweep metric."""
+    return sorted(
+        sweep_results,
+        key=lambda result: (extract_sweep_sort_value(result, sweep_sort), str(result["config"])),
+        reverse=descending,
+    )
 
 
 def build_run_summary(stats: dict[str, int]) -> dict[str, object]:

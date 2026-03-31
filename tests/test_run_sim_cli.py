@@ -623,7 +623,7 @@ class TestRunSimCLI:
         assert "program=" not in result.stdout
 
     def test_run_sim_sweeps_one_program_across_named_configs(self) -> None:
-        """The CLI should run one workload across multiple named configs and export a sweep JSON summary."""
+        """The CLI should run one workload across multiple named configs and export ordered sweep artifacts."""
         repo_root = Path(__file__).resolve().parent.parent
         script = repo_root / "scripts" / "run_sim.py"
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -640,6 +640,9 @@ class TestRunSimCLI:
                     "baseline",
                     "--sweep-config",
                     "tiny_debug",
+                    "--sweep-sort",
+                    "cycles",
+                    "--sweep-desc",
                     "--sweep-json",
                     str(sweep_path),
                     "--sweep-csv",
@@ -655,19 +658,20 @@ class TestRunSimCLI:
                 sweep_rows = list(csv.reader(handle))
 
         assert "sweep program=builtin-smoke configs=2" in result.stdout
-        assert "sweep config=baseline" in result.stdout
-        assert "sweep config=tiny_debug" in result.stdout
+        assert "sweep rank=1 config=tiny_debug sort=cycles sort_value=4" in result.stdout
+        assert "sweep rank=2 config=baseline sort=cycles sort_value=3" in result.stdout
         assert "\nprogram=" not in result.stdout
         assert sweep_payload["program"] == "builtin-smoke"
-        assert [entry["config"] for entry in sweep_payload["results"]] == ["baseline", "tiny_debug"]
-        assert sweep_payload["results"][0]["config_snapshot"]["core"]["vector"]["lanes"] == 16
-        assert sweep_payload["results"][1]["config_snapshot"]["core"]["vector"]["lanes"] == 4
-        assert sweep_payload["results"][0]["cycles"] < sweep_payload["results"][1]["cycles"]
+        assert sweep_payload["sort"] == {"field": "cycles", "descending": True}
+        assert [entry["config"] for entry in sweep_payload["results"]] == ["tiny_debug", "baseline"]
+        assert sweep_payload["results"][0]["config_snapshot"]["core"]["vector"]["lanes"] == 4
+        assert sweep_payload["results"][1]["config_snapshot"]["core"]["vector"]["lanes"] == 16
+        assert sweep_payload["results"][0]["cycles"] > sweep_payload["results"][1]["cycles"]
         assert sweep_payload["results"][0]["summary"]["pipeline"]["retired"] == 2
         assert sweep_rows[0][:6] == ["config", "cycles", "issued", "retired", "halted", "exit_code"]
-        assert sweep_rows[1][0] == "baseline"
-        assert sweep_rows[2][0] == "tiny_debug"
-        assert int(sweep_rows[1][1]) < int(sweep_rows[2][1])
+        assert sweep_rows[1][0] == "tiny_debug"
+        assert sweep_rows[2][0] == "baseline"
+        assert int(sweep_rows[1][1]) > int(sweep_rows[2][1])
 
     def test_run_sim_rejects_single_run_reports_during_config_sweep(self) -> None:
         """The CLI should reject ambiguous single-run report flags during multi-config sweep mode."""
