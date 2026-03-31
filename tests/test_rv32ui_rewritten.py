@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -206,3 +207,20 @@ def test_rewritten_rv32ui_cases_cover_complete_rv32i_base_instruction_set() -> N
     """The handwritten ISA corpus should collectively cover the complete RV32I base instruction set."""
     covered = {opcode for case in CASES for opcode in case.covered_opcodes}
     assert covered == RV32I_BASE_OPCODES
+
+
+def test_rewritten_rv32ui_cases_use_one_source_per_opcode() -> None:
+    """Each handwritten ISA case should now map one source file to one claimed opcode."""
+    for case in CASES:
+        assert len(case.covered_opcodes) == 1
+        assert Path(case.source_name).stem == case.covered_opcodes[0]
+
+
+def test_rewritten_rv32ui_case_sources_contain_their_claimed_opcode() -> None:
+    """Each handwritten ISA source should explicitly emit the opcode it claims to cover."""
+    isa_dir = Path(__file__).resolve().parent / "isa"
+    for case in CASES:
+        source_path = isa_dir / case.source_name
+        source_text = source_path.read_text()
+        opcode = case.covered_opcodes[0]
+        assert re.search(rf"\b{re.escape(opcode)}\b", source_text)
